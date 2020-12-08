@@ -1,51 +1,75 @@
+#include "grpwk20.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include "grpwk20.h"
 
-int enc(){
-  FILE *ofp;
-  if((ofp = fopen(ORGDATA, "r")) ==NULL){
+#define SEGMENT_SIZE SR_SIZE
+// x = 200000/(25 - log_4(x))
+// log_4 (x) ≒ 7
+#define HEADER_SIZE 7
+
+unsigned parseUInt(unsigned char upper, unsigned char lower) {
+  return ((upper & 0x1) << 1) + (lower & 0x1);
+}
+
+unsigned char encodeUInt(unsigned value) {
+  switch (value) {
+  case 0:
+    return BASE_A;
+  case 1:
+    return BASE_C;
+  case 2:
+    return BASE_G;
+  case 3:
+    return BASE_T;
+  default:
+    fprintf(stderr, "Invalid input for encodeUInt: %d", value);
+    abort();
+  }
+}
+
+void writeHeader(unsigned int segmentIndex, FILE *fp) {
+  int shift = 14;
+  while (shift > 0) {
+    shift--;
+    unsigned upperBit = (segmentIndex >> shift) & 0x1;
+    shift--;
+    unsigned lowerBit = (segmentIndex >> shift) & 0x1;
+    fputc(encodeUInt(upperBit * 2 + lowerBit), fp);
+  }
+}
+
+int enc() {
+  FILE *sourceFile;
+  if ((sourceFile = fopen(ORGDATA, "r")) == NULL) {
     fprintf(stderr, "cannot open %s\n", ORGDATA);
     exit(1);
   }
 
   FILE *efp;
-  if((efp = fopen(ENCDATA, "w")) ==NULL){
+  if ((efp = fopen(ENCDATA, "w")) == NULL) {
     fprintf(stderr, "cannot open %s\n", ENCDATA);
     exit(1);
   }
 
-  unsigned char c1, c2, res;
-  for(int i=0; i<ORGDATA_LEN; i+=2){
-    c1 = getc(ofp);
-    c2 = getc(ofp);
-    
-    switch( ( (c1 & 0x1) << 7) >> 6 | ( c2 & 0x1) ){
-    case 0:
-      res = BASE_A;
-      break;
-    case 1:
-      res = BASE_C;      
-      break;
-    case 2:
-      res = BASE_G;      
-      break;
-    case 3:
-      res = BASE_T;      
-      break;
+  unsigned bodySize = SEGMENT_SIZE - HEADER_SIZE;
+  unsigned segmentCount = (ORGDATA_LEN / 2 + bodySize - 1) / bodySize;
+
+  for (int segmentIdx = 0; segmentIdx < segmentCount; segmentIdx++) {
+    writeHeader(segmentIdx, efp);
+    for (int bodyIdx = 0; bodyIdx < bodySize; bodyIdx++) {
+      unsigned char upperBit = getc(sourceFile);
+      unsigned char lowerBit = getc(sourceFile);
+      unsigned value = parseUInt(upperBit, lowerBit);
+      fputc(encodeUInt(value), efp);
     }
-    fputc(res, efp);
   }
-  res = '\n';
-  fputc(res, efp);
-  
-  
-  fclose(ofp);
+  fputc('\n', efp);
+  fclose(sourceFile);
   fclose(efp);
-  return(0);
+  return (0);
 }
 
-int main(){
+int main() {
   enc();
-  return(0);
+  return (0);
 }
