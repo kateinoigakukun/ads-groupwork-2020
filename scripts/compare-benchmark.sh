@@ -8,7 +8,7 @@ SRC="$(cd "$(dirname $0)/../" && pwd)"
 
 run_test() {
   (cd $SRC/grpwk20 && \
-    make all && \
+    make clean && make all && \
     ./test.sh $(cat $SRC/grpwk20/conf.txt | tail -n1)
   )
 }
