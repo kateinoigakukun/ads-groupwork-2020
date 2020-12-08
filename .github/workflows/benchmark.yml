@@ -1,0 +1,11 @@
+on: [push]
+jobs:
+  run:
+    runs-on: ubuntu-20.04
+    name: Benchmark
+    steps:
+    - uses: actions/checkout@v2
+    - run: make all
+      working-directory: ./grpwk20
+    - run: ./test.sh
+      working-directory: ./grpwk20
