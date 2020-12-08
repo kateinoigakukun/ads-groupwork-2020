@@ -9,4 +9,4 @@ all: gen enc syn seq dec eval
 	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
-	rm  $(PROGS) $(DATA)
+	rm -f $(PROGS) $(DATA)
