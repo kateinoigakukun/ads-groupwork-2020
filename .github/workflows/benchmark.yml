@@ -7,5 +7,5 @@ jobs:
     - uses: actions/checkout@v2
     - run: make all
       working-directory: ./grpwk20
-    - run: ./test.sh
+    - run: ./test.sh $(cat conf.txt | tail -n1)
       working-directory: ./grpwk20
