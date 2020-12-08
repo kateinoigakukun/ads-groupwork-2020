@@ -1,0 +1,17 @@
+on: [pull_request]
+jobs:
+  compare-benchmark:
+    runs-on: ubuntu-20.04
+    name: Compare benchmark
+    steps:
+    - uses: actions/checkout@v2
+    - id: run-benchmark
+      run: echo "::set-output name=result::$(./scripts/compare-benchmark.sh ${{github.head_ref}} ${{github.base_ref}})"
+    - uses: actions/upload-artifact@v2
+      with:
+        name: benchmark-results
+        path: ./.artifacts
+    - uses: actions/github-script@0.3.0
+      with:
+        message: ${{ steps.run-benchmark.outputs.result }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}

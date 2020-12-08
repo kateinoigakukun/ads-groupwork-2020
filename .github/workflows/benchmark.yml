@@ -1,6 +1,6 @@
 on: [push]
 jobs:
-  run:
+  benchmark:
     runs-on: ubuntu-20.04
     name: Benchmark
     steps:
