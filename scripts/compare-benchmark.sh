@@ -3,9 +3,6 @@ set -ex
 
 REVISON1=$1
 REVISON2=$2
-CURRENT="$(git symbolic-ref --short HEAD)"
-
-trap "git checkout $CURRENT > /dev/null" INT TERM EXIT
 
 SRC="$(cd "$(dirname $0)/../" && pwd)"
 
