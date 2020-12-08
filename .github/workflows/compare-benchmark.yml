@@ -13,5 +13,7 @@ jobs:
         path: ./.artifacts
     - uses: actions/github-script@0.3.0
       with:
-        message: ${{ steps.run-benchmark.outputs.result }}
         github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const { issue: { number: issue_number }, repo: { owner, repo }  } = context;
+          github.issues.createComment({ issue_number, owner, repo, body: '```diff\n${{ steps.run-benchmark.outputs.result }}\n```' });
