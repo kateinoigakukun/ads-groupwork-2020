@@ -64,7 +64,6 @@ void dec() {
       segmentCount = readSegmentIdx;
       break;
     }
-    printf("segment[%d]\n", index);
     for (int bodyIdx = 0; bodyIdx < bodySize; bodyIdx++) {
       unsigned char value = getc(sourceFile);
       buffer[index * bodySize + bodyIdx] = value;
