@@ -5,6 +5,8 @@ jobs:
     name: Compare benchmark
     steps:
     - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0 # Fetch all histories
     - id: run-benchmark
       run: echo "::set-output name=result::$(./scripts/compare-benchmark.sh ${{github.head_ref}} ${{github.base_ref}})"
     - uses: actions/upload-artifact@v2
