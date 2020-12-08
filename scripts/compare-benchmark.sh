@@ -22,4 +22,4 @@ run_test &> "$ARTIFACTS/$REVISON1"
 git checkout $REVISON2 > /dev/null
 run_test &> "$ARTIFACTS/$REVISON2"
 
-diff "$ARTIFACTS/$REVISON1" "$ARTIFACTS/$REVISON2"
+diff "$ARTIFACTS/$REVISON1" "$ARTIFACTS/$REVISON2" || true
