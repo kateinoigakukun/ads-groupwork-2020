@@ -9,7 +9,7 @@ jobs:
         fetch-depth: 0 # Fetch all histories
     - id: run-benchmark
       run: |
-        result="$(./scripts/compare-benchmark.sh ${{github.head_ref}} ${{github.base_ref}})"
+        result="$(./scripts/compare-benchmark.sh ${{github.base_ref}} ${{github.head_ref}})"
         result="${result//$'\n'/\\n}"
         echo "::set-output name=result::$result"
     - uses: actions/upload-artifact@v2
