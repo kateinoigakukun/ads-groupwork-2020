@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "grpwk20.h"
+#define rep(i,n) for(int (i)=0;(i)<(n);(i)++)
+#define repp(i,m,n) for(int (i)=(m);(i)<(n);(i)++)
+#define repm(i,n) for(int (i)=(n-1);(i)>=0;(i)--)
 
 int enc(){
   FILE *ofp;
@@ -16,7 +19,32 @@ int enc(){
   }
 
   unsigned char c1, c2, res;
+  int j=0;
+  int dig[7];
   for(int i=0; i<ORGDATA_LEN; i+=2){
+    if(i%22==0){
+      int k=j;
+      rep(i,7){
+        dig[i]=k%4;
+        k/=4;
+      }
+      j++;
+      repm(i,7){
+        if(dig[i]==0){
+          fputc('A',efp);
+          fputc('A',efp);
+        }else if(dig[i]==1){
+          fputc('G',efp);
+          fputc('G',efp);
+        }else if(dig[i]==2){
+          fputc('C',efp);
+          fputc('C',efp);
+        }else{
+          fputc('T',efp);
+          fputc('T',efp);
+        }
+      }
+    }
     c1 = getc(ofp);
     c2 = getc(ofp);
     
