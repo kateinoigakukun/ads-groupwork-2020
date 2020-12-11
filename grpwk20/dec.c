@@ -5,7 +5,8 @@
 #define SEGMENT_SIZE SR_SIZE
 // x = 200000/(25 - log_4(x))
 // log_4 (x) ≒ 7
-#define HEADER_SIZE 7
+#define SEGMENT_INDEX_SIZE 7
+#define HEADER_SIZE SEGMENT_INDEX_SIZE
 
 unsigned decodeUInt(unsigned char value) {
   switch (value) {
@@ -26,7 +27,7 @@ unsigned decodeUInt(unsigned char value) {
 
 int readSegmentIndex(FILE *fp) {
   int value = 0;
-  int digits = HEADER_SIZE;
+  int digits = SEGMENT_INDEX_SIZE;
   while (digits > 0) {
     digits--;
     char loaded = getc(fp);
@@ -37,7 +38,7 @@ int readSegmentIndex(FILE *fp) {
   return value;
 }
 
-void dec() {
+void dec(void) {
   FILE *sourceFile;
   if ((sourceFile = fopen(SEQDATA, "r")) == NULL) {
     fprintf(stderr, "cannot open %s\n", SEQDATA);
@@ -51,22 +52,22 @@ void dec() {
   }
 
   unsigned bodySize = SEGMENT_SIZE - HEADER_SIZE;
-  unsigned segmentCount = 0; //(ORGDATA_LEN + bodySize - 1)/bodySize;
-  unsigned maxSegmentCount = (1 << (HEADER_SIZE * 4)) - 1;
+  unsigned segmentCount = 0;
+  unsigned maxSegmentCount = (1 << (SEGMENT_INDEX_SIZE * 2)) - 1;
 
   unsigned char *buffer =
       malloc(sizeof(unsigned char) * maxSegmentCount * bodySize);
 
   for (int readSegmentIdx = 0; readSegmentIdx < maxSegmentCount;
        readSegmentIdx++) {
-    unsigned index = readSegmentIndex(sourceFile);
-    if (index == -1) {
+    unsigned indexA = readSegmentIndex(sourceFile);
+    if (indexA == -1) {
       segmentCount = readSegmentIdx;
       break;
     }
     for (int bodyIdx = 0; bodyIdx < bodySize; bodyIdx++) {
       unsigned char value = getc(sourceFile);
-      buffer[index * bodySize + bodyIdx] = value;
+      buffer[indexA * bodySize + bodyIdx] = value;
     }
   }
 
@@ -83,7 +84,7 @@ void dec() {
   return;
 }
 
-int main() {
+int main(void) {
   dec();
   return 0;
 }

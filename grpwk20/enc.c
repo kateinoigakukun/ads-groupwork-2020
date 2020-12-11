@@ -5,7 +5,8 @@
 #define SEGMENT_SIZE SR_SIZE
 // x = 200000/(25 - log_4(x))
 // log_4 (x) ≒ 7
-#define HEADER_SIZE 7
+#define SEGMENT_INDEX_SIZE 7
+#define HEADER_SIZE SEGMENT_INDEX_SIZE
 
 unsigned parseUInt(unsigned char upper, unsigned char lower) {
   return ((upper & 0x1) << 1) + (lower & 0x1);
@@ -27,8 +28,8 @@ unsigned char encodeUInt(unsigned value) {
   }
 }
 
-void writeHeader(unsigned int segmentIndex, FILE *fp) {
-  int shift = 14;
+void writeIndex(unsigned int segmentIndex, FILE *fp) {
+  int shift = SEGMENT_INDEX_SIZE * 2;
   while (shift > 0) {
     shift--;
     unsigned upperBit = (segmentIndex >> shift) & 0x1;
@@ -38,15 +39,15 @@ void writeHeader(unsigned int segmentIndex, FILE *fp) {
   }
 }
 
-int enc() {
+int enc(void) {
   FILE *sourceFile;
   if ((sourceFile = fopen(ORGDATA, "r")) == NULL) {
     fprintf(stderr, "cannot open %s\n", ORGDATA);
     exit(1);
   }
 
-  FILE *efp;
-  if ((efp = fopen(ENCDATA, "w")) == NULL) {
+  FILE *outputFile;
+  if ((outputFile = fopen(ENCDATA, "w")) == NULL) {
     fprintf(stderr, "cannot open %s\n", ENCDATA);
     exit(1);
   }
@@ -55,21 +56,21 @@ int enc() {
   unsigned segmentCount = (ORGDATA_LEN / 2 + bodySize - 1) / bodySize;
 
   for (int segmentIdx = 0; segmentIdx < segmentCount; segmentIdx++) {
-    writeHeader(segmentIdx, efp);
+    writeIndex(segmentIdx, outputFile);
     for (int bodyIdx = 0; bodyIdx < bodySize; bodyIdx++) {
       unsigned char upperBit = getc(sourceFile);
       unsigned char lowerBit = getc(sourceFile);
       unsigned value = parseUInt(upperBit, lowerBit);
-      fputc(encodeUInt(value), efp);
+      fputc(encodeUInt(value), outputFile);
     }
   }
-  fputc('\n', efp);
+  fputc('\n', outputFile);
   fclose(sourceFile);
-  fclose(efp);
-  return (0);
+  fclose(outputFile);
+  return 0;
 }
 
-int main() {
+int main(void) {
   enc();
-  return (0);
+  return 0;
 }
