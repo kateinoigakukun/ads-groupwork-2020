@@ -1,9 +1,5 @@
 import Foundation
 
-let contents = try String(
-    contentsOf: URL(fileURLWithPath: CommandLine.arguments[1])
-)
-
 extension String {
     func split(by length: Int) -> [String] {
         var startIndex = self.startIndex
@@ -19,5 +15,10 @@ extension String {
     }
 }
 
-let result = contents.split(by: 50).joined(separator: "\n")
-try result.write(toFile: CommandLine.arguments[1], atomically: true, encoding: .utf8)
+for file in CommandLine.arguments[1...] {
+    let contents = try String(
+        contentsOf: URL(fileURLWithPath: file), encoding: .ascii
+    )
+    let result = contents.split(by: 50).joined(separator: "\n")
+    try result.write(toFile: file, atomically: true, encoding: .utf8)
+}
