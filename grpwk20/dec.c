@@ -3,13 +3,31 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+//#define LOG_DEBUG 1
+//#define LOG_TRACE 1
+
 #define SEGMENT_SIZE SR_SIZE
 // x = 200000/(25 - log_4(x))
 // log_4 (x) ≒ 7
 #define SEGMENT_INDEX_SIZE 7
 #define SEGMENT_CONSTRAINT_LENGTH 3
 #define SEGMENT_INDEX_STATE_COUNT (SEGMENT_CONSTRAINT_LENGTH - 1) * 2
-#define HEADER_SIZE SEGMENT_INDEX_SIZE + SEGMENT_CONSTRAINT_LENGTH - 1
+#define HEADER_SIZE (SEGMENT_INDEX_SIZE * 2 + SEGMENT_CONSTRAINT_LENGTH - 1)
+
+#define ADS_NOP do {} while (false)
+#define ADS_PRINT(X) do { X; } while (false)
+
+#ifdef LOG_DEBUG
+  #define ADS_DEBUG(X) ADS_PRINT(X)
+#else
+  #define ADS_DEBUG(X) ADS_NOP
+#endif
+
+#ifdef LOG_TRACE
+  #define ADS_TRACE(X) ADS_PRINT(X)
+#else
+  #define ADS_TRACE(X) ADS_NOP
+#endif
 
 unsigned decodeUInt(unsigned char value) {
   switch (value) {
@@ -22,9 +40,8 @@ unsigned decodeUInt(unsigned char value) {
   case BASE_T:
     return 3;
   default:
+    ADS_DEBUG(fprintf(stderr, "Invalid input for decodeUInt: %d", value));
     return 0;
-    //      fprintf(stderr, "Invalid input for decodeUInt: %d", value);
-    //      abort();
   }
 }
 
@@ -82,12 +99,17 @@ typedef struct {
 
 int decodeViterbi(FILE *fp) {
   state_node_t paths[HEADER_SIZE + 1][SEGMENT_INDEX_STATE_COUNT];
+  for (int i = 0; i < HEADER_SIZE + 1; i++) {
+    for (int j = 0; j < SEGMENT_INDEX_STATE_COUNT; j++) {
+      paths[i][j].isActivated = false;
+    }
+  }
   paths[0][0].fromState = 0;
   paths[0][0].minPathMetric = 0;
   paths[0][0].isActivated = true;
 
   for (int time = 0; time < HEADER_SIZE; time++) {
-    
+
     char inputBitChar = getc(fp);
     if (inputBitChar == '\n')
       return -1;
@@ -96,11 +118,13 @@ int decodeViterbi(FILE *fp) {
     for (int state = 0; state < SEGMENT_INDEX_STATE_COUNT; state++) {
       if (!paths[time][state].isActivated) continue;
 
-      bool onlyAcceptZero = time > SEGMENT_INDEX_SIZE;
+      bool onlyAcceptZero = time >= SEGMENT_INDEX_SIZE * 2;
       for (int possibleInput = 0; possibleInput <= (onlyAcceptZero ? 0 : 1); possibleInput++) {
+
         transition_output_t output = convolutionTransition(possibleInput, state);
         
         int branchMetric = hammingDistance(expectedOutput, output.output);
+        ADS_TRACE(printf("state = %d, nextState = %d possibleInput = %d, branchMetric = %d\n", state, output.nextState, possibleInput, branchMetric));
         int pathMetric = paths[time][state].minPathMetric + branchMetric;
         
         state_node_t *nextStates = paths[time + 1];
@@ -119,10 +143,15 @@ int decodeViterbi(FILE *fp) {
 
   int lastState = 0;
   int result = 0;
-  for (int time = HEADER_SIZE - 1; 0 <= time; time--) {
-    result |= paths[time][lastState].inputBit << (HEADER_SIZE - time - 2);
+  for (int time = HEADER_SIZE; HEADER_SIZE - 2 < time; time--) {
     lastState = paths[time][lastState].fromState;
   }
+  for (int time = HEADER_SIZE - 2; 0 < time; time--) {
+    ADS_TRACE(printf("result[%d] = %d\n", time, paths[time][lastState].inputBit));
+    result |= paths[time][lastState].inputBit << ((SEGMENT_INDEX_SIZE * 2) - time);
+    lastState = paths[time][lastState].fromState;
+  }
+
   return result;
 }
 
@@ -148,7 +177,8 @@ void dec(void) {
 
   for (int readSegmentIdx = 0; readSegmentIdx < maxSegmentCount;
        readSegmentIdx++) {
-    unsigned indexA = readSegmentIndex(sourceFile);
+    unsigned indexA = decodeViterbi(sourceFile);
+    ADS_DEBUG(printf("segments[%d]\n", indexA));
     if (indexA == -1) {
       segmentCount = readSegmentIdx;
       break;
@@ -173,13 +203,6 @@ void dec(void) {
 }
 
 int main(void) {
-  FILE *sourceFile;
-  if ((sourceFile = fopen("testdata", "r")) == NULL) {
-    fprintf(stderr, "cannot open %s\n", SEQDATA);
-    exit(1);
-  }
-  int result = decodeViterbi(sourceFile);
-  printf("%d\n", result);
-//  dec();
+  dec();
   return 0;
 }

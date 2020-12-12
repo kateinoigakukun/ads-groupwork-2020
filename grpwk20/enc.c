@@ -7,7 +7,7 @@
 // log_4 (x) ≒ 7
 #define SEGMENT_INDEX_SIZE 7
 #define SEGMENT_CONSTRAINT_LENGTH 3
-#define HEADER_SIZE SEGMENT_INDEX_SIZE + SEGMENT_CONSTRAINT_LENGTH - 1
+#define HEADER_SIZE (SEGMENT_INDEX_SIZE * 2 + SEGMENT_CONSTRAINT_LENGTH - 1)
 
 unsigned parseUInt(unsigned char upper, unsigned char lower) {
   return ((upper & 0x1) << 1) + (lower & 0x1);
@@ -47,8 +47,8 @@ int coder(int *reg, int bit) {
 
 int encodeViterbi(int input, FILE *fp) {
   int reg = 0;
-  for (int i = 0; i < SEGMENT_INDEX_SIZE; i++) {
-    int bit = (input >> (SEGMENT_INDEX_SIZE - i - 1)) & 0x1;
+  for (int i = 0; i < SEGMENT_INDEX_SIZE * 2; i++) {
+    int bit = (input >> (SEGMENT_INDEX_SIZE * 2 - i - 1)) & 0x1;
     int output = coder(&reg, bit);
     fputc(encodeUInt(output), fp);
   }
@@ -102,7 +102,7 @@ int enc(void) {
 }
 
 int main(void) {
-//  enc();
-  encodeViterbi(28, stdout);
+  enc();
+//  encodeViterbi(512, stdout);
   return 0;
 }
