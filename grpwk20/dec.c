@@ -171,27 +171,18 @@ int decodeViterbi(FILE *fp) {
 
 #define MAX_SEGMENT_INDEX ((1 << (SEGMENT_INDEX_SIZE * 2)) - 1)
 #define SEGMENT_COUNT (((ORGDATA_LEN/2) + SEGMENT_BODY_SIZE - 1)/SEGMENT_BODY_SIZE)
+#define BSBLOCK_SIZE SEGMENT_COUNT * SEGMENT_SIZE // 277800
 
-void readBSBlock(FILE *sourceFile, FILE *outputFile) {
-  unsigned bodySize = SEGMENT_SIZE - HEADER_SIZE;
-
-  unsigned char buffer[sizeof(unsigned char) * MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE];
-
+void readBSBlock(FILE *sourceFile, FILE *outputFile, unsigned char *buffer) {
   for (int readSegmentIdx = 0; readSegmentIdx < SEGMENT_COUNT;
        readSegmentIdx++) {
     unsigned indexA = decodeViterbi(sourceFile);
     ADS_DEBUG(printf("segments[%d]\n", indexA));
 
-    for (int bodyIdx = 0; bodyIdx < bodySize; bodyIdx++) {
+    for (int bodyIdx = 0; bodyIdx < SEGMENT_BODY_SIZE; bodyIdx++) {
       unsigned char value = getc(sourceFile);
-      buffer[indexA * bodySize + bodyIdx] = value;
+      buffer[indexA * SEGMENT_BODY_SIZE + bodyIdx] = value;
     }
-  }
-
-  for (int index = 0; index < SEGMENT_COUNT * SEGMENT_BODY_SIZE; index++) {
-    unsigned value = decodeUInt(buffer[index]);
-    fputc((value >> 1) + '0', outputFile);
-    fputc((value & 0x1) + '0', outputFile);
   }
 }
 
@@ -212,7 +203,16 @@ void dec(void) {
     exit(1);
   }
 
-  readBSBlock(sourceFile, outputFile);
+  unsigned char buffer[sizeof(unsigned char) * MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE];
+
+  readBSBlock(sourceFile, outputFile, buffer);
+
+  for (int index = 0; index < SEGMENT_COUNT * SEGMENT_BODY_SIZE; index++) {
+    unsigned value = decodeUInt(buffer[index]);
+    fputc((value >> 1) + '0', outputFile);
+    fputc((value & 0x1) + '0', outputFile);
+  }
+
   fputc('\n', outputFile);
 
   fclose(sourceFile);
