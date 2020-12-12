@@ -1,7 +1,7 @@
 #include "grpwk20.h"
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 
 //#define LOG_DEBUG 1
 //#define LOG_TRACE 1
@@ -14,19 +14,24 @@
 #define SEGMENT_INDEX_STATE_COUNT (SEGMENT_CONSTRAINT_LENGTH - 1) * 2
 #define HEADER_SIZE (SEGMENT_INDEX_SIZE * 2 + SEGMENT_CONSTRAINT_LENGTH - 1)
 
-#define ADS_NOP do {} while (false)
-#define ADS_PRINT(X) do { X; } while (false)
+#define ADS_NOP                                                                \
+  do {                                                                         \
+  } while (false)
+#define ADS_PRINT(X)                                                           \
+  do {                                                                         \
+    X;                                                                         \
+  } while (false)
 
 #ifdef LOG_DEBUG
-  #define ADS_DEBUG(X) ADS_PRINT(X)
+#define ADS_DEBUG(X) ADS_PRINT(X)
 #else
-  #define ADS_DEBUG(X) ADS_NOP
+#define ADS_DEBUG(X) ADS_NOP
 #endif
 
 #ifdef LOG_TRACE
-  #define ADS_TRACE(X) ADS_PRINT(X)
+#define ADS_TRACE(X) ADS_PRINT(X)
 #else
-  #define ADS_TRACE(X) ADS_NOP
+#define ADS_TRACE(X) ADS_NOP
 #endif
 
 unsigned decodeUInt(unsigned char value) {
@@ -85,9 +90,8 @@ transition_output_t convolutionTransition(int input, int state) {
   int c0 = (inputs[0] + inputs[2]) & 0x1;
   int c1 = (inputs[0] + inputs[1] + inputs[2]) & 0x1;
 
-  return (transition_output_t){
-    .output = (c1 << 1) + c0, .nextState = nextState
-  };
+  return (transition_output_t){.output = (c1 << 1) + c0,
+                               .nextState = nextState};
 }
 
 typedef struct {
@@ -116,21 +120,27 @@ int decodeViterbi(FILE *fp) {
     int expectedOutput = decodeUInt(inputBitChar);
 
     for (int state = 0; state < SEGMENT_INDEX_STATE_COUNT; state++) {
-      if (!paths[time][state].isActivated) continue;
+      if (!paths[time][state].isActivated)
+        continue;
 
       bool onlyAcceptZero = time >= SEGMENT_INDEX_SIZE * 2;
-      for (int possibleInput = 0; possibleInput <= (onlyAcceptZero ? 0 : 1); possibleInput++) {
+      for (int possibleInput = 0; possibleInput <= (onlyAcceptZero ? 0 : 1);
+           possibleInput++) {
 
-        transition_output_t output = convolutionTransition(possibleInput, state);
-        
+        transition_output_t output =
+            convolutionTransition(possibleInput, state);
+
         int branchMetric = hammingDistance(expectedOutput, output.output);
-        ADS_TRACE(printf("state = %d, nextState = %d possibleInput = %d, branchMetric = %d\n", state, output.nextState, possibleInput, branchMetric));
+        ADS_TRACE(printf("state = %d, nextState = %d possibleInput = %d, "
+                         "branchMetric = %d\n",
+                         state, output.nextState, possibleInput, branchMetric));
         int pathMetric = paths[time][state].minPathMetric + branchMetric;
-        
+
         state_node_t *nextStates = paths[time + 1];
-        bool shouldUpdate = (nextStates[output.nextState].isActivated) &&
-        nextStates[output.nextState].minPathMetric > pathMetric;
-        
+        bool shouldUpdate =
+            (nextStates[output.nextState].isActivated) &&
+            nextStates[output.nextState].minPathMetric > pathMetric;
+
         if (!nextStates[output.nextState].isActivated || shouldUpdate) {
           nextStates[output.nextState].minPathMetric = pathMetric;
           nextStates[output.nextState].fromState = state;
@@ -147,8 +157,10 @@ int decodeViterbi(FILE *fp) {
     lastState = paths[time][lastState].fromState;
   }
   for (int time = HEADER_SIZE - 2; 0 < time; time--) {
-    ADS_TRACE(printf("result[%d] = %d\n", time, paths[time][lastState].inputBit));
-    result |= paths[time][lastState].inputBit << ((SEGMENT_INDEX_SIZE * 2) - time);
+    ADS_TRACE(
+        printf("result[%d] = %d\n", time, paths[time][lastState].inputBit));
+    result |= paths[time][lastState].inputBit
+              << ((SEGMENT_INDEX_SIZE * 2) - time);
     lastState = paths[time][lastState].fromState;
   }
 

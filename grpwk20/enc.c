@@ -59,7 +59,7 @@ int encodeViterbi(int input, FILE *fp) {
   return 0;
 }
 
-//void writeIndex(unsigned int segmentIndex, FILE *fp) {
+// void writeIndex(unsigned int segmentIndex, FILE *fp) {
 //  int shift = SEGMENT_INDEX_SIZE * 2;
 //  while (shift > 0) {
 //    shift--;
@@ -103,6 +103,6 @@ int enc(void) {
 
 int main(void) {
   enc();
-//  encodeViterbi(512, stdout);
+  //  encodeViterbi(512, stdout);
   return 0;
 }
