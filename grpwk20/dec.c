@@ -13,6 +13,7 @@
 #define SEGMENT_CONSTRAINT_LENGTH 3
 #define SEGMENT_INDEX_STATE_COUNT (SEGMENT_CONSTRAINT_LENGTH - 1) * 2
 #define HEADER_SIZE (SEGMENT_INDEX_SIZE * 2 + SEGMENT_CONSTRAINT_LENGTH - 1)
+#define SEGMENT_BODY_SIZE (SEGMENT_SIZE - HEADER_SIZE)
 
 #define ADS_NOP                                                                \
   do {                                                                         \
@@ -101,6 +102,7 @@ typedef struct {
   bool isActivated;
 } state_node_t;
 
+/// See also http://caspar.hazymoon.jp/convolution/index.html
 int decodeViterbi(FILE *fp) {
   state_node_t paths[HEADER_SIZE + 1][SEGMENT_INDEX_STATE_COUNT];
   for (int i = 0; i < HEADER_SIZE + 1; i++) {
@@ -167,6 +169,36 @@ int decodeViterbi(FILE *fp) {
   return result;
 }
 
+#define MAX_SEGMENT_INDEX ((1 << (SEGMENT_INDEX_SIZE * 2)) - 1)
+#define SEGMENT_COUNT (((ORGDATA_LEN/2) + SEGMENT_BODY_SIZE - 1)/SEGMENT_BODY_SIZE)
+
+void readBSBlock(FILE *sourceFile, FILE *outputFile) {
+  unsigned bodySize = SEGMENT_SIZE - HEADER_SIZE;
+
+  unsigned char buffer[sizeof(unsigned char) * MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE];
+
+  for (int readSegmentIdx = 0; readSegmentIdx < SEGMENT_COUNT;
+       readSegmentIdx++) {
+    unsigned indexA = decodeViterbi(sourceFile);
+    ADS_DEBUG(printf("segments[%d]\n", indexA));
+
+    for (int bodyIdx = 0; bodyIdx < bodySize; bodyIdx++) {
+      unsigned char value = getc(sourceFile);
+      buffer[indexA * bodySize + bodyIdx] = value;
+    }
+  }
+
+  for (int index = 0; index < SEGMENT_COUNT * SEGMENT_BODY_SIZE; index++) {
+    unsigned value = decodeUInt(buffer[index]);
+    fputc((value >> 1) + '0', outputFile);
+    fputc((value & 0x1) + '0', outputFile);
+  }
+}
+
+void readNPBlock() {
+  
+}
+
 void dec(void) {
   FILE *sourceFile;
   if ((sourceFile = fopen(SEQDATA, "r")) == NULL) {
@@ -180,33 +212,7 @@ void dec(void) {
     exit(1);
   }
 
-  unsigned bodySize = SEGMENT_SIZE - HEADER_SIZE;
-  unsigned segmentCount = 0;
-  unsigned maxSegmentCount = (1 << (SEGMENT_INDEX_SIZE * 2)) - 1;
-
-  unsigned char *buffer =
-      malloc(sizeof(unsigned char) * maxSegmentCount * bodySize);
-
-  for (int readSegmentIdx = 0; readSegmentIdx < maxSegmentCount;
-       readSegmentIdx++) {
-    unsigned indexA = decodeViterbi(sourceFile);
-    ADS_DEBUG(printf("segments[%d]\n", indexA));
-    if (indexA == -1) {
-      segmentCount = readSegmentIdx;
-      break;
-    }
-    for (int bodyIdx = 0; bodyIdx < bodySize; bodyIdx++) {
-      unsigned char value = getc(sourceFile);
-      buffer[indexA * bodySize + bodyIdx] = value;
-    }
-  }
-
-  for (int index = 0; index < segmentCount * bodySize; index++) {
-    unsigned value = decodeUInt(buffer[index]);
-    fputc((value >> 1) + '0', outputFile);
-    fputc((value & 0x1) + '0', outputFile);
-  }
-
+  readBSBlock(sourceFile, outputFile);
   fputc('\n', outputFile);
 
   fclose(sourceFile);

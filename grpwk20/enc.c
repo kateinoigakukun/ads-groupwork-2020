@@ -8,6 +8,7 @@
 #define SEGMENT_INDEX_SIZE 7
 #define SEGMENT_CONSTRAINT_LENGTH 3
 #define HEADER_SIZE (SEGMENT_INDEX_SIZE * 2 + SEGMENT_CONSTRAINT_LENGTH - 1)
+#define SEGMENT_BODY_SIZE (SEGMENT_SIZE - HEADER_SIZE)
 
 unsigned parseUInt(unsigned char upper, unsigned char lower) {
   return ((upper & 0x1) << 1) + (lower & 0x1);
@@ -70,6 +71,43 @@ int encodeViterbi(int input, FILE *fp) {
 //  }
 //}
 
+#define SEGMENT_COUNT (((ORGDATA_LEN/2) + SEGMENT_BODY_SIZE - 1)/SEGMENT_BODY_SIZE)
+
+void emitBSBlock(FILE *sourceFile, FILE *outputFile, unsigned char *buffer) {
+
+  int paddingBits = 0;
+
+  for (int segmentIdx = 0; segmentIdx < SEGMENT_COUNT; segmentIdx++) {
+    encodeViterbi(segmentIdx, outputFile);
+    for (int bodyIdx = 0; bodyIdx < SEGMENT_BODY_SIZE; bodyIdx++) {
+      unsigned char upperBit = getc(sourceFile);
+      if (upperBit == '\n') {
+        paddingBits = SEGMENT_BODY_SIZE - bodyIdx - 1;
+        break;
+      }
+      unsigned char lowerBit = getc(sourceFile);
+      unsigned value = parseUInt(upperBit, lowerBit);
+      unsigned char decoded = encodeUInt(value);
+      buffer[segmentIdx * SEGMENT_BODY_SIZE + bodyIdx] = decoded;
+      fputc(decoded, outputFile);
+    }
+  }
+
+  for (int bodyIdx = 0; bodyIdx < paddingBits; bodyIdx++) {
+    fputc(encodeUInt(0), outputFile);
+  }
+}
+
+void emitNPBlock(FILE *sourceFile, FILE *outputFile, unsigned char *buffer) {
+  for (int i = 0; i < ORGDATA_LEN/2; i++) {
+    unsigned char value = buffer[i];
+    if (i > 0 && buffer[i - 1] == value) {
+      continue;
+    }
+    fputc(value, outputFile);
+  }
+}
+
 int enc(void) {
   FILE *sourceFile;
   if ((sourceFile = fopen(ORGDATA, "r")) == NULL) {
@@ -83,18 +121,11 @@ int enc(void) {
     exit(1);
   }
 
-  unsigned bodySize = SEGMENT_SIZE - HEADER_SIZE;
-  unsigned segmentCount = (ORGDATA_LEN / 2 + bodySize - 1) / bodySize;
+  unsigned char buffer[ORGDATA_LEN/2];
 
-  for (int segmentIdx = 0; segmentIdx < segmentCount; segmentIdx++) {
-    encodeViterbi(segmentIdx, outputFile);
-    for (int bodyIdx = 0; bodyIdx < bodySize; bodyIdx++) {
-      unsigned char upperBit = getc(sourceFile);
-      unsigned char lowerBit = getc(sourceFile);
-      unsigned value = parseUInt(upperBit, lowerBit);
-      fputc(encodeUInt(value), outputFile);
-    }
-  }
+  emitBSBlock(sourceFile, outputFile, buffer);
+  emitNPBlock(sourceFile, outputFile, buffer);
+
   fputc('\n', outputFile);
   fclose(sourceFile);
   fclose(outputFile);
@@ -103,6 +134,5 @@ int enc(void) {
 
 int main(void) {
   enc();
-  //  encodeViterbi(512, stdout);
   return 0;
 }
