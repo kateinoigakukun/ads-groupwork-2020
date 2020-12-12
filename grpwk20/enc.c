@@ -52,10 +52,10 @@ int enc(){
     case 0:
       res = BASE_A;
       break;
-    case 1:
+    case 2:
       res = BASE_C;      
       break;
-    case 2:
+    case 1:
       res = BASE_G;      
       break;
     case 3:
