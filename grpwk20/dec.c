@@ -4,8 +4,9 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-#define LOG_DEBUG 1
+//#define LOG_DEBUG 1
 //#define LOG_TRACE 1
 
 #define SEGMENT_SIZE SR_SIZE
@@ -180,19 +181,22 @@ void readBSBlock(FILE *sourceFile, unsigned char *bsBuffer) {
   for (int readSegmentIdx = 0; readSegmentIdx < SEGMENT_COUNT;
        readSegmentIdx++) {
     unsigned indexA = decodeViterbi(sourceFile);
-    ADS_DEBUG(printf("segments[%d]\n", indexA));
+    ADS_TRACE(printf("segments[%d]\n", indexA));
 
     for (int bodyIdx = 0; bodyIdx < SEGMENT_BODY_SIZE; bodyIdx++) {
       unsigned char value = getc(sourceFile);
       bsBuffer[indexA * SEGMENT_BODY_SIZE + bodyIdx] = value;
     }
   }
+  if (getc(sourceFile) != '\n') {
+    assert(false && "expect newline");
+  }
 }
 
-static inline int min4(int a, int b, int c, int d) {
-  int items[4] = {a, b, c, d};
+static inline int min3(int a, int b, int c) {
+  int items[3] = {a, b, c};
   int minItem = a;
-  for (int i = 1; i < 4; i++) {
+  for (int i = 1; i < 3; i++) {
     if (minItem > items[i]) {
       minItem = items[i];
     }
@@ -212,10 +216,17 @@ typedef struct {
   edit_op_kind_t kind;
   unsigned char payload1;
   unsigned char payload2;
+  int bsIndex;
 } edit_op_t;
 
 void dumpOpTable(edit_op_kind_t **opTable, unsigned char *bsBuffer,
                  int bsLength, unsigned char *npBuffer, int npLength) {
+  printf("|   |");
+  for (int y = 0; y < bsLength + 1; y++) {
+    printf("  %2d  |", y);
+  }
+  printf("\n");
+
   printf("|   |   x  |");
 
   for (int y = 0; y < bsLength; y++) {
@@ -237,6 +248,10 @@ void dumpOpTable(edit_op_kind_t **opTable, unsigned char *bsBuffer,
     for (int y = 0; y < bsLength + 1; y++) {
       char symbol[4] = {0};
       int symbolCount = 0;
+      if (opTable[x][y] == EDIT_OP_NONE) {
+        printf("   X  |");
+        continue;
+      }
       if ((opTable[x][y] & EDIT_OP_INSERT) != 0) {
         symbol[symbolCount] = 'I';
         symbolCount++;
@@ -262,6 +277,12 @@ void dumpOpTable(edit_op_kind_t **opTable, unsigned char *bsBuffer,
 
 void dumpCostTable(int **costTable, unsigned char *bsBuffer, int bsLength,
                    unsigned char *npBuffer, int npLength) {
+  printf("|   |");
+  for (int y = 0; y < bsLength + 1; y++) {
+    printf("  %2d  |", y);
+  }
+  printf("\n");
+  
   printf("|   |   x  |");
 
   for (int y = 0; y < bsLength; y++) {
@@ -281,7 +302,11 @@ void dumpCostTable(int **costTable, unsigned char *bsBuffer, int bsLength,
       printf("| %c |", npBuffer[x - 1]);
     }
     for (int y = 0; y < bsLength + 1; y++) {
-      printf(" %4d |", costTable[x][y]);
+      if (costTable[x][y] == INT_MAX || costTable[x][y] < 0) { // < 0 means uninitialized
+        printf("    X |");
+      } else {
+        printf(" %4d |", costTable[x][y]);
+      }
     }
     printf("\n");
   }
@@ -333,8 +358,8 @@ int calculateEditOperations(unsigned char *bsBuffer, int bsLength,
 (Input from NP)
   */
   for (int x = 0; x < npLength + 1; x++) {
-    costTable[x][0] = x;
-    opTable[x][0] = EDIT_OP_REMOVE;
+    costTable[x][0] = INT_MAX;
+    opTable[x][0] = EDIT_OP_NONE;
   }
   costTable[0][0] = 0;
   opTable[0][1] = EDIT_OP_INSERT | EDIT_OP_REMOVE;
@@ -371,31 +396,33 @@ int calculateEditOperations(unsigned char *bsBuffer, int bsLength,
   ADS_DEBUG(printf("calculateEditOperations npLength=%d\n", npLength));
   ADS_DEBUG(printf("calculateEditOperations bsLength=%d\n", bsLength));
   for (int x = 1; x < npLength + 1; x++) {
-    ADS_DEBUG(if (x % 1000 == 0) printf("calculateEditOperations x=%d\n", x));
-    for (int y = 1; y < bsLength + 1; y++) {
-      ADS_DEBUG(if (y % 1000 == 0) printf("calculateEditOperations y=%d\n", y));
+    ADS_TRACE(if (x % 1000 == 0) printf("calculateEditOperations x=%d\n", x));
+    costTable[x][x - 1] = INT_MAX;
+    for (int y = x; y < bsLength + 1; y++) {
+      ADS_TRACE(if (y % 1000 == 0) printf("calculateEditOperations y=%d\n", y));
       int insertCost = costTable[x][y - 1];
 
       // 同じ文字の連続挿入でない場合はコストあり
-      if (y < 2 || bsBuffer[y - 2] != npBuffer[x - 1]) {
-        insertCost += 1;
+      if (y < 2 || bsBuffer[y - 2] != bsBuffer[y - 1]) {
+        insertCost = insertCost < INT_MAX ? (insertCost + 1) : INT_MAX;
       }
-      int removeCost = costTable[x - 1][y] + 1;
-      int substCost = costTable[x - 1][y - 1] + 1;
+
+      int substCost = costTable[x - 1][y - 1];
+      if (substCost < INT_MAX) {
+        substCost += 1;
+      }
       int matchCost = INT_MAX;
 
       if (bsBuffer[y - 1] == npBuffer[x - 1]) {
         matchCost = costTable[x - 1][y - 1];
       }
 
-      int minOpCost = min4(insertCost, removeCost, substCost, matchCost);
+      int minOpCost = min3(insertCost, substCost, matchCost);
       edit_op_kind_t possibleOp = EDIT_OP_NONE;
       if (insertCost == minOpCost) {
         possibleOp |= EDIT_OP_INSERT;
       }
-      if (removeCost == minOpCost) {
-        possibleOp |= EDIT_OP_REMOVE;
-      }
+
       if (substCost == minOpCost) {
         possibleOp |= EDIT_OP_SUBST;
       }
@@ -407,8 +434,8 @@ int calculateEditOperations(unsigned char *bsBuffer, int bsLength,
     }
   }
 
-  dumpOpTable(opTable, bsBuffer, bsLength, npBuffer, npLength);
-  dumpCostTable(costTable, bsBuffer, bsLength, npBuffer, npLength);
+  ADS_DEBUG(dumpOpTable(opTable, bsBuffer, bsLength, npBuffer, npLength));
+  ADS_DEBUG(dumpCostTable(costTable, bsBuffer, bsLength, npBuffer, npLength));
   int x = npLength;
   int y = bsLength;
   int opCount = 0;
@@ -417,6 +444,7 @@ int calculateEditOperations(unsigned char *bsBuffer, int bsLength,
       bestOps[opCount] = (edit_op_t){
           .kind = EDIT_OP_NOP,
           .payload1 = npBuffer[x - 1],
+          .bsIndex = y - 1,
       };
       assert(npBuffer[x - 1] == bsBuffer[y - 1]);
       opCount++;
@@ -426,6 +454,7 @@ int calculateEditOperations(unsigned char *bsBuffer, int bsLength,
       bestOps[opCount] = (edit_op_t){
           .kind = EDIT_OP_INSERT,
           .payload1 = bsBuffer[y - 1],
+          .bsIndex = y - 1,
       };
       opCount++;
       y--;
@@ -434,6 +463,7 @@ int calculateEditOperations(unsigned char *bsBuffer, int bsLength,
           .kind = EDIT_OP_SUBST,
           .payload1 = npBuffer[x - 1],
           .payload2 = bsBuffer[y - 1],
+          .bsIndex = y - 1,
       };
       opCount++;
       x--;
@@ -442,6 +472,7 @@ int calculateEditOperations(unsigned char *bsBuffer, int bsLength,
       bestOps[opCount] = (edit_op_t){
           .kind = EDIT_OP_REMOVE,
           .payload1 = npBuffer[x - 1],
+          .bsIndex = y - 1,
       };
       opCount++;
       x--;
@@ -478,7 +509,7 @@ int readNPBlock(FILE *sourceFile, unsigned char *npBuffer) {
 
 void dumpEditOps(edit_op_t *ops, int opLength) {
   for (int i = opLength - 1; i >= 0; i--) {
-    printf("edit[%2d]: ", opLength - i - 1);
+    printf("edit[%2d][bs_index=%2d]: ", opLength - i - 1, ops[i].bsIndex);
     switch (ops[i].kind) {
     case EDIT_OP_SUBST:
       printf("subst '%c' with '%c'\n", ops[i].payload1, ops[i].payload2);
@@ -498,9 +529,36 @@ void dumpEditOps(edit_op_t *ops, int opLength) {
   }
 }
 
+void applyEditOps(edit_op_t *ops, int opLength, unsigned char *bsBuffer) {
+  for (int editIdx = opLength - 1; editIdx >= 0; editIdx--) {
+    int bufferIdx = opLength - editIdx - 1;
+    printf("edit[%2d][bs_index=%2d]: ", opLength - editIdx - 1, ops[editIdx].bsIndex);
+    switch (ops[editIdx].kind) {
+    case EDIT_OP_SUBST:
+      assert(bsBuffer[bufferIdx] == ops[editIdx].payload2);
+      bsBuffer[bufferIdx] = ops[editIdx].payload2;
+      printf("subst '%c' with '%c'\n", ops[editIdx].payload1, ops[editIdx].payload2);
+      break;
+    case EDIT_OP_NOP:
+      assert(bsBuffer[bufferIdx] == ops[editIdx].payload1);
+      printf("nop '%c'\n", ops[editIdx].payload1);
+      break;
+    case EDIT_OP_INSERT:
+      assert(bsBuffer[bufferIdx] == ops[editIdx].payload1);
+      printf("insert '%c'\n", ops[editIdx].payload1);
+      break;
+    case EDIT_OP_REMOVE:
+      printf("remove '%c'\n", ops[editIdx].payload1);
+      break;
+    default:
+      break;
+    }
+  }
+}
+
 void dec(void) {
   FILE *sourceFile;
-  if ((sourceFile = fopen(ENCDATA, "r")) == NULL) {
+  if ((sourceFile = fopen(SEQDATA, "r")) == NULL) {
     fprintf(stderr, "cannot open %s\n", SEQDATA);
     exit(1);
   }
@@ -525,10 +583,12 @@ void dec(void) {
   int npLength = readNPBlock(sourceFile, npBuffer);
 
   edit_op_t bestOps[bsLength + npLength];
-  printf("bsBuffer[0..<15] = %.15s\n", bsBuffer);
-  printf("npBuffer[0..<15] = %.15s\n", npBuffer);
-  int opLength = calculateEditOperations(bsBuffer, 15, npBuffer, 15, bestOps);
+  printf("bsBuffer[0..<10] = %.10s\n", bsBuffer);
+  printf("npBuffer[0..<5] = %.5s\n", npBuffer);
+  int replaceLength = 100000;
+  int opLength = calculateEditOperations(bsBuffer, replaceLength, npBuffer, replaceLength, bestOps);
   ADS_DEBUG(dumpEditOps(bestOps, opLength));
+  applyEditOps(bestOps, opLength, bsBuffer);
 
   for (int index = 0; index < SEGMENT_COUNT * SEGMENT_BODY_SIZE; index++) {
     unsigned value = decodeUInt(bsBuffer[index]);
