@@ -17,6 +17,7 @@
 #define SEGMENT_INDEX_STATE_COUNT (SEGMENT_CONSTRAINT_LENGTH - 1) * 2
 #define HEADER_SIZE (SEGMENT_INDEX_SIZE * 2 + SEGMENT_CONSTRAINT_LENGTH - 1)
 #define SEGMENT_BODY_SIZE (SEGMENT_SIZE - HEADER_SIZE)
+#define BS_READ_COUNT 10
 
 #define ADS_NOP                                                                \
   do {                                                                         \
@@ -193,6 +194,18 @@ void readBSBlock(FILE *sourceFile, unsigned char *bsBuffer) {
   }
 }
 
+int maxIndexOfArray(int *items, int length) {
+  int maxItem = items[0];
+  int index = 0;
+  for (int i = 1; i < length; i++) {
+    if (maxItem < items[i]) {
+      maxItem = items[i];
+      index = i;
+    }
+  }
+  return index;
+}
+
 void dec(void) {
   FILE *sourceFile;
   if ((sourceFile = fopen(SEQDATA, "r")) == NULL) {
@@ -206,7 +219,7 @@ void dec(void) {
     exit(1);
   }
 
-  unsigned char bsBuffer[MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE];
+  unsigned char bsBuffer[BS_READ_COUNT][MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE];
 
   printf("SEGMENT_COUNT = %d\n", SEGMENT_COUNT);
   printf("MAX_SEGMENT_INDEX = %d\n", MAX_SEGMENT_INDEX);
@@ -214,10 +227,22 @@ void dec(void) {
          MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE);
   printf("BSBLOCK_SIZE = %d\n", BSBLOCK_SIZE);
 
-  readBSBlock(sourceFile, bsBuffer);
+  for (int i = 0; i < BS_READ_COUNT; i++) {
+    readBSBlock(sourceFile, bsBuffer[i]);
+  }
+
+  int outputBuffer[MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE];
+  for (int i = 0; i < MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE; i++) {
+    int candidates[4] = { 0 };
+    for (int epoch = 0; epoch < BS_READ_COUNT; epoch++) {
+      int code = decodeUInt(bsBuffer[epoch][i]);
+      candidates[code]++;
+    }
+    outputBuffer[i] = maxIndexOfArray(candidates, 4);
+  }
 
   for (int index = 0; index < SEGMENT_COUNT * SEGMENT_BODY_SIZE; index++) {
-    unsigned value = decodeUInt(bsBuffer[index]);
+    unsigned value = outputBuffer[index];
     fputc((value >> 1) + '0', outputFile);
     fputc((value & 0x1) + '0', outputFile);
   }

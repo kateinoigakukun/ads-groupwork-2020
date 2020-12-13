@@ -124,7 +124,6 @@ int enc(void) {
   unsigned char buffer[ORGDATA_LEN/2];
 
   emitBSBlock(sourceFile, outputFile, buffer);
-  emitNPBlock(sourceFile, outputFile, buffer);
 
   fputc('\n', outputFile);
   fclose(sourceFile);
