@@ -336,8 +336,12 @@ int calculateEditOperations(unsigned char *bsBuffer, int bsLength,
     costTable[x][0] = x;
     opTable[x][0] = EDIT_OP_REMOVE;
   }
-  for (int y = 0; y < bsLength + 1; y++) {
-    costTable[0][y] = y;
+  costTable[0][0] = 0;
+  opTable[0][1] = EDIT_OP_INSERT | EDIT_OP_REMOVE;
+  costTable[0][1] = 1;
+  opTable[0][1] = EDIT_OP_INSERT;
+  for (int y = 2; y < bsLength + 1; y++) {
+    costTable[0][y] = costTable[0][y - 1] + (bsBuffer[y - 1] == bsBuffer[y - 2] ? 0 : 1);
     opTable[0][y] = EDIT_OP_INSERT;
   }
   // Phase 2
@@ -356,7 +360,7 @@ int calculateEditOperations(unsigned char *bsBuffer, int bsLength,
      X
 (Input from NP)
 
-   *1. TAをCAAにするためのコストを求めたい TODO
+   *1. TAをCAAにするためのコストを求めたい
       - 1. TAをCAにしてAを挿入する          (追加コスト0)
         2. TAのTをCAAにして末尾のAを削除する (追加コスト1)
         3. TをCAにしてAをAに置換する        (追加コスト0)
@@ -370,7 +374,12 @@ int calculateEditOperations(unsigned char *bsBuffer, int bsLength,
     ADS_DEBUG(if (x % 1000 == 0) printf("calculateEditOperations x=%d\n", x));
     for (int y = 1; y < bsLength + 1; y++) {
       ADS_DEBUG(if (y % 1000 == 0) printf("calculateEditOperations y=%d\n", y));
-      int insertCost = costTable[x][y - 1] + 1;
+      int insertCost = costTable[x][y - 1];
+
+      // 同じ文字の連続挿入でない場合はコストあり
+      if (y < 2 || bsBuffer[y - 2] != npBuffer[x - 1]) {
+        insertCost += 1;
+      }
       int removeCost = costTable[x - 1][y] + 1;
       int substCost = costTable[x - 1][y - 1] + 1;
       int matchCost = INT_MAX;
@@ -469,7 +478,7 @@ int readNPBlock(FILE *sourceFile, unsigned char *npBuffer) {
 
 void dumpEditOps(edit_op_t *ops, int opLength) {
   for (int i = opLength - 1; i >= 0; i--) {
-    printf("edit[%d]: ", opLength - i - 1);
+    printf("edit[%2d]: ", opLength - i - 1);
     switch (ops[i].kind) {
     case EDIT_OP_SUBST:
       printf("subst '%c' with '%c'\n", ops[i].payload1, ops[i].payload2);
