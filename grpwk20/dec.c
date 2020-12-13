@@ -17,7 +17,7 @@
 #define SEGMENT_INDEX_STATE_COUNT (SEGMENT_CONSTRAINT_LENGTH - 1) * 2
 #define HEADER_SIZE (SEGMENT_INDEX_SIZE * 2 + SEGMENT_CONSTRAINT_LENGTH - 1)
 #define SEGMENT_BODY_SIZE (SEGMENT_SIZE - HEADER_SIZE)
-#define BS_READ_COUNT 10
+#define BS_READ_COUNT 3
 
 #define ADS_NOP                                                                \
   do {                                                                         \
@@ -221,12 +221,6 @@ void dec(void) {
 
   unsigned char bsBuffer[BS_READ_COUNT][MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE];
 
-  printf("SEGMENT_COUNT = %d\n", SEGMENT_COUNT);
-  printf("MAX_SEGMENT_INDEX = %d\n", MAX_SEGMENT_INDEX);
-  printf("MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE = %d\n",
-         MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE);
-  printf("BSBLOCK_SIZE = %d\n", BSBLOCK_SIZE);
-
   for (int i = 0; i < BS_READ_COUNT; i++) {
     readBSBlock(sourceFile, bsBuffer[i]);
   }
@@ -241,7 +235,7 @@ void dec(void) {
     outputBuffer[i] = maxIndexOfArray(candidates, 4);
   }
 
-  for (int index = 0; index < SEGMENT_COUNT * SEGMENT_BODY_SIZE; index++) {
+  for (int index = 0; index < ORGDATA_LEN/2; index++) {
     unsigned value = outputBuffer[index];
     fputc((value >> 1) + '0', outputFile);
     fputc((value & 0x1) + '0', outputFile);
