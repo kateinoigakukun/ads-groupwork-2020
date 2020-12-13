@@ -17,7 +17,7 @@
 #define SEGMENT_INDEX_STATE_COUNT (SEGMENT_CONSTRAINT_LENGTH - 1) * 2
 #define HEADER_SIZE (SEGMENT_INDEX_SIZE * 2 + SEGMENT_CONSTRAINT_LENGTH - 1)
 #define SEGMENT_BODY_SIZE (SEGMENT_SIZE - HEADER_SIZE)
-#define BS_READ_COUNT 3
+#define BS_READ_COUNT 40
 
 #define ADS_NOP                                                                \
   do {                                                                         \
@@ -178,7 +178,7 @@ int decodeViterbi(FILE *fp) {
   (((ORGDATA_LEN / 2) + SEGMENT_BODY_SIZE - 1) / SEGMENT_BODY_SIZE)
 #define BSBLOCK_SIZE (SEGMENT_COUNT * SEGMENT_BODY_SIZE) // 277800
 
-void readBSBlock(FILE *sourceFile, unsigned char *bsBuffer) {
+void readBSLine(FILE *sourceFile, unsigned char *bsBuffer) {
   for (int readSegmentIdx = 0; readSegmentIdx < SEGMENT_COUNT;
        readSegmentIdx++) {
     unsigned indexA = decodeViterbi(sourceFile);
@@ -222,7 +222,7 @@ void dec(void) {
   unsigned char bsBuffer[BS_READ_COUNT][MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE];
 
   for (int i = 0; i < BS_READ_COUNT; i++) {
-    readBSBlock(sourceFile, bsBuffer[i]);
+    readBSLine(sourceFile, bsBuffer[i]);
   }
 
   int outputBuffer[MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE];
