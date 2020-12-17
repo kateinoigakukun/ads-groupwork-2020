@@ -85,13 +85,7 @@ void emitBSBlock(FILE *outputFile, unsigned char *buffer) {
     encodeViterbi(segmentIdx, outputFile);
     for (int bodyIdx = 0; bodyIdx < SEGMENT_BODY_SIZE; bodyIdx++) {
       if (cursor > ORGDATA_LEN/2) break;
-      unsigned char upperBit = buffer[cursor];
-      cursor++;
-      unsigned char lowerBit = buffer[cursor];
-      cursor++;
-      unsigned value = parseUInt(upperBit, lowerBit);
-      unsigned char decoded = encodeUInt(value);
-      fputc(decoded, outputFile);
+      fputc(buffer[cursor], outputFile);
     }
   }
 
@@ -100,12 +94,9 @@ void emitBSBlock(FILE *outputFile, unsigned char *buffer) {
   }
 }
 
-void emitNPBlock(FILE *sourceFile, FILE *outputFile, unsigned char *buffer) {
+void emitNPBlock(FILE *outputFile, char *buffer) {
   for (int i = 0; i < ORGDATA_LEN/2; i++) {
-    unsigned char value = buffer[i];
-    if (i > 0 && buffer[i - 1] == value) {
-      continue;
-    }
+    char value = buffer[i];
     fputc(value, outputFile);
   }
 }
@@ -123,10 +114,18 @@ int enc(void) {
     exit(1);
   }
 
-  unsigned char *buffer;
-  buffer = mmap(NULL, ORGDATA_LEN/2, PROT_READ, MAP_PRIVATE, sourceFD, 0);
+  char *rawBuffer;
+  rawBuffer = mmap(NULL, ORGDATA_LEN, PROT_READ, MAP_PRIVATE, sourceFD, 0);
+  char buffer[ORGDATA_LEN/2];
+  for (int cursor = 0; cursor < ORGDATA_LEN; cursor += 2) {
+    char upperBit = rawBuffer[cursor];
+    char lowerBit = rawBuffer[cursor + 1];
+    unsigned value = parseUInt(upperBit, lowerBit);
+    char decoded = encodeUInt(value);
+    buffer[cursor / 2] = decoded;
+  }
 
-  emitBSBlock(outputFile, buffer);
+  emitNPBlock(outputFile, buffer);
 
   fputc('\n', outputFile);
   close(sourceFD);
