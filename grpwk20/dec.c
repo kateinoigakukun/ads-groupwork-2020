@@ -16,7 +16,9 @@ int dec(){
     exit(1);
   }
 
-  unsigned char c1, c2, count, res;
+  char c1, c2;
+  unsigned char res;
+  int count;
   c1 = getc(sfp);
   while (1) {
     count = 1;
