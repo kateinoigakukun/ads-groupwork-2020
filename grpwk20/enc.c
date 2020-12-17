@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "grpwk20.h"
+#define N 20
 
 int enc(){
   FILE *ofp;
@@ -19,27 +20,27 @@ int enc(){
   for(int i=0; i<ORGDATA_LEN; i+=2){
     c1 = getc(ofp);
     c2 = getc(ofp);
-    
+
     switch( ( (c1 & 0x1) << 7) >> 6 | ( c2 & 0x1) ){
     case 0:
       res = BASE_A;
       break;
     case 1:
-      res = BASE_C;      
+      res = BASE_C;
       break;
     case 2:
-      res = BASE_G;      
+      res = BASE_G;
       break;
     case 3:
-      res = BASE_T;      
+      res = BASE_T;
       break;
     }
-    fputc(res, efp);
+    for (size_t j = 0; j < N; j++) fputc(res, efp);
   }
   res = '\n';
   fputc(res, efp);
-  
-  
+
+
   fclose(ofp);
   fclose(efp);
   return(0);
