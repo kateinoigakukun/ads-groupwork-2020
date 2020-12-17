@@ -1,6 +1,9 @@
 #include "grpwk20.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #define SEGMENT_SIZE SR_SIZE
 // x = 200000/(25 - log_4(x))
@@ -73,22 +76,21 @@ int encodeViterbi(int input, FILE *fp) {
 
 #define SEGMENT_COUNT (((ORGDATA_LEN/2) + SEGMENT_BODY_SIZE - 1)/SEGMENT_BODY_SIZE)
 
-void emitBSBlock(FILE *sourceFile, FILE *outputFile, unsigned char *buffer) {
+void emitBSBlock(FILE *outputFile, unsigned char *buffer) {
 
+  int cursor = 0;
   int paddingBits = 0;
 
   for (int segmentIdx = 0; segmentIdx < SEGMENT_COUNT; segmentIdx++) {
     encodeViterbi(segmentIdx, outputFile);
     for (int bodyIdx = 0; bodyIdx < SEGMENT_BODY_SIZE; bodyIdx++) {
-      unsigned char upperBit = getc(sourceFile);
-      if (upperBit == '\n') {
-        paddingBits = SEGMENT_BODY_SIZE - bodyIdx - 1;
-        break;
-      }
-      unsigned char lowerBit = getc(sourceFile);
+      if (cursor > ORGDATA_LEN/2) break;
+      unsigned char upperBit = buffer[cursor];
+      cursor++;
+      unsigned char lowerBit = buffer[cursor];
+      cursor++;
       unsigned value = parseUInt(upperBit, lowerBit);
       unsigned char decoded = encodeUInt(value);
-      buffer[segmentIdx * SEGMENT_BODY_SIZE + bodyIdx] = decoded;
       fputc(decoded, outputFile);
     }
   }
@@ -109,8 +111,8 @@ void emitNPBlock(FILE *sourceFile, FILE *outputFile, unsigned char *buffer) {
 }
 
 int enc(void) {
-  FILE *sourceFile;
-  if ((sourceFile = fopen(ORGDATA, "r")) == NULL) {
+  int sourceFD;
+  if ((sourceFD = open(ORGDATA, O_RDONLY, S_IRUSR)) < 0) {
     fprintf(stderr, "cannot open %s\n", ORGDATA);
     exit(1);
   }
@@ -121,12 +123,13 @@ int enc(void) {
     exit(1);
   }
 
-  unsigned char buffer[ORGDATA_LEN/2];
+  unsigned char *buffer;
+  buffer = mmap(NULL, ORGDATA_LEN/2, PROT_READ, MAP_PRIVATE, sourceFD, 0);
 
-  emitBSBlock(sourceFile, outputFile, buffer);
+  emitBSBlock(outputFile, buffer);
 
   fputc('\n', outputFile);
-  fclose(sourceFile);
+  close(sourceFD);
   fclose(outputFile);
   return 0;
 }
