@@ -45,10 +45,10 @@ void reportError(char *context) {
   exit(EXIT_FAILURE);
 }
 
-static inline int min3(int a, int b, int c) {
-  int items[3] = {a, b, c};
+static inline int min4(int a, int b, int c, int d) {
+  int items[4] = {a, b, c, d};
   int minItem = a;
-  for (int i = 1; i < 3; i++) {
+  for (int i = 1; i < 4; i++) {
     if (minItem > items[i]) {
       minItem = items[i];
     }
@@ -78,8 +78,51 @@ int maxIndexOfArray(int *items, int length) {
   return index;
 }
 
+// MARK: - Debug Support for edit distance
+void dumpCostTable(int **costTable, char *base, int baseLength, char *target,
+                   int targetLength) {
+  printf("|   |");
+  for (int y = 0; y < baseLength + 1; y++) {
+    printf("  %2d  |", y);
+  }
+  printf("\n");
+
+  printf("|   |   x  |");
+
+  for (int y = 0; y < baseLength; y++) {
+    printf("   %c  |", base[y]);
+  }
+  printf("\n");
+  printf("│───┼──────┼");
+  for (int y = 0; y < baseLength; y++) {
+    printf("──────┼");
+  }
+  printf("\n");
+
+  for (int x = 0; x < targetLength + 1; x++) {
+    if (x == 0) {
+      printf("| x |");
+    } else {
+      printf("| %c |", target[x - 1]);
+    }
+    for (int y = 0; y < baseLength + 1; y++) {
+      if (costTable[x][y] == INT_MAX ||
+          costTable[x][y] < 0) { // < 0 means uninitialized
+        printf("    X |");
+      } else {
+        printf(" %4d |", costTable[x][y]);
+      }
+    }
+    printf("\n");
+  }
+  printf("\n");
+}
+
 int editDistance(char *base, char *target, int length) {
-  int costTable[length + 1][length + 1];
+  int **costTable = malloc(sizeof(int *) * (length + 1));
+  for (int x = 0; x < length + 1; x++) {
+    costTable[x] = malloc(sizeof(int) * (length + 1));
+  }
   costTable[0][0] = 0;
   for (int x = 1; x < length + 1; x++) {
     costTable[x][0] = x;
@@ -92,10 +135,11 @@ int editDistance(char *base, char *target, int length) {
     for (int y = 1; y < length + 1; y++) {
       int insertCost = costTable[x][y - 1] + 1;
       int removeCost = costTable[x - 1][y] + 1;
-      int addend = base[x - 1] == target[x - 1] ? 0 : 1;
-      int substCost = costTable[x - 1][y - 1] + addend;
+      int matchCost =
+          base[y - 1] == target[x - 1] ? costTable[x - 1][y - 1] : INT_MAX;
+      int substCost = costTable[x - 1][y - 1] + 1;
 
-      int minCost = min3(insertCost, removeCost, substCost);
+      int minCost = min4(insertCost, removeCost, substCost, matchCost);
       costTable[x][y] = minCost;
     }
   }
@@ -119,7 +163,7 @@ unsigned decodeUInt(unsigned char value) {
   }
 }
 
-unsigned char encodeUInt(unsigned value) {
+char encodeUInt(unsigned value) {
   switch (value) {
   case 0:
     return BASE_A;
@@ -315,6 +359,9 @@ void estimateHeadOffsets(reader_state_t *state, encoded_bit_t bit, char *heads,
     int bestOffset = INT_MAX;
     int minCost = INT_MAX;
     for (int diff = 1; diff < NP_DIFF_THRESHOLD + 1; diff++) {
+      if (diff == 2 && state->outputCursor == 13 && line == 0) {
+        printf("breakpoint\n");
+      }
       int cost = editDistance(headDeletedBases[0], headInsertedTargets[diff],
                               PEEK_LENGTH);
       if (minCost > cost) {
