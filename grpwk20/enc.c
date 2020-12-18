@@ -18,8 +18,7 @@ int enc(){
     exit(1);
   }
 
-  unsigned char c1, c2, res;
-  char prev='X';
+  unsigned char c1;
   for(int i=0; i<ORGDATA_LEN; i++){
     c1 = getc(ofp);
     if(c1=='0')rep(j,5)fputc('A',efp);
