@@ -10,11 +10,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define NP_LINES_LENGTH 5
+#define NP_LINES_LENGTH 4
 #define NP_DIFF_THRESHOLD 3
 #define PEEK_LENGTH 15
 
-#define LOG_DEBUG 1
+//#define LOG_DEBUG 1
 //#define LOG_TRACE 1
 
 #define ADS_NOP                                                                \
@@ -45,16 +45,18 @@ void reportError(char *context) {
   exit(EXIT_FAILURE);
 }
 
-static inline int min4(int a, int b, int c, int d) {
-  int items[4] = {a, b, c, d};
+static inline int min3(int a, int b, int c) {
+  int items[3] = {a, b, c};
   int minItem = a;
-  for (int i = 1; i < 4; i++) {
+  for (int i = 1; i < 3; i++) {
     if (minItem > items[i]) {
       minItem = items[i];
     }
   }
   return minItem;
 }
+
+int max2(int a, int b) { return a > b ? a : b; }
 
 bool isAllEqualArray(char *items, int length) {
   char head = items[0];
@@ -137,9 +139,8 @@ int editDistance(char *base, char *target, int length) {
       int removeCost = costTable[x - 1][y] + 1;
       int matchCost =
           base[y - 1] == target[x - 1] ? costTable[x - 1][y - 1] : INT_MAX;
-      int substCost = costTable[x - 1][y - 1] + 1;
 
-      int minCost = min4(insertCost, removeCost, substCost, matchCost);
+      int minCost = min3(insertCost, removeCost, matchCost);
       costTable[x][y] = minCost;
     }
   }
@@ -248,8 +249,80 @@ reader_state_t createReader() {
   return state;
 }
 
+void dumpState(reader_state_t *state) {
+  printf("============ Reader State ============\n");
+  printf("Input lines:\n");
+  for (int line = 0; line < NP_LINES_LENGTH; line++) {
+    int baseCursor = state->lineCursors[line];
+    for (int cursor = max2(baseCursor - 10, 0); cursor < baseCursor + 10;
+         cursor++) {
+      if (cursor == baseCursor) {
+        printf("[%c]", state->lines[line][cursor]);
+      } else {
+        printf("%c", state->lines[line][cursor]);
+      }
+    }
+    printf(" [length = %6d, cursor = %6d]\n", state->lineLengths[line],
+           baseCursor);
+  }
+
+  {
+    int baseCursor = state->outputCursor;
+    printf("Output buffer: [cursor = %6d]\n", baseCursor);
+    for (int cursor = max2(baseCursor - 10, 0); cursor < baseCursor; cursor++) {
+      printf("%1d", state->outputBuffer[cursor]);
+    }
+    printf("[x]xxxxxxxxx\n");
+    for (int cursor = max2(baseCursor - 10, 0); cursor < baseCursor; cursor++) {
+      char ch;
+      if (cursor % 2 == 0) {
+        ch =
+            (state->outputBuffer[cursor] == ENCODED_BIT_ZERO) ? BASE_T : BASE_C;
+      } else {
+        ch =
+            (state->outputBuffer[cursor] == ENCODED_BIT_ZERO) ? BASE_A : BASE_G;
+      }
+      printf("%c", ch);
+    }
+    printf("[x]xxxxxxxxx\n");
+  }
+  {
+    printf("Expected buffer:\n");
+    int baseCursor = state->outputCursor;
+    for (int cursor = max2(baseCursor - 10, 0); cursor < baseCursor + 10;
+         cursor++) {
+      if (cursor == baseCursor) {
+        printf("[%d]", originalBuffer[cursor]);
+      } else {
+        printf("%d", originalBuffer[cursor]);
+      }
+    }
+    printf("\n");
+    for (int cursor = max2(baseCursor - 10, 0); cursor < baseCursor + 10;
+         cursor++) {
+      char ch;
+      if (cursor % 2 == 0) {
+        ch = (originalBuffer[cursor] == ENCODED_BIT_ZERO) ? BASE_T : BASE_C;
+      } else {
+        ch = (originalBuffer[cursor] == ENCODED_BIT_ZERO) ? BASE_A : BASE_G;
+      }
+      if (cursor == baseCursor) {
+        printf("[%c]", ch);
+      } else {
+        printf("%c", ch);
+      }
+    }
+    printf("\n");
+  }
+}
+
 void writeOutput(reader_state_t *state, encoded_bit_t value) {
-  ADS_DEBUG(assert(value == originalBuffer[state->outputCursor]));
+#ifdef LOG_DEBUG
+  if (value != originalBuffer[state->outputCursor]) {
+    dumpState(state);
+    assert(false);
+  }
+#endif
   state->outputBuffer[state->outputCursor] = value;
   state->outputCursor++;
 }
@@ -289,6 +362,9 @@ encoded_bit_t estimateHeadBit(reader_state_t *state, char *heads) {
       continue;
     }
   }
+#ifdef LOG_DEBUG
+  assert(zeros != 0 || ones != 0);
+#endif
   return zeros < ones ? ENCODED_BIT_ONE : ENCODED_BIT_ZERO;
 }
 
@@ -322,7 +398,10 @@ void estimateHeadOffsets(reader_state_t *state, encoded_bit_t bit, char *heads,
                          int *offsetsByLine) {
   bool isValidLine[NP_LINES_LENGTH];
   for (int line = 0; line < NP_LINES_LENGTH; line++) {
-    isValidLine[line] = bit == decodeBit(heads[line]);
+    bool isSameBit = bit == decodeBit(heads[line]);
+    bool isUpperBit = heads[line] == BASE_T || heads[line] == BASE_C;
+    bool isSameLoc = (state->outputCursor % 2 == 0) == isUpperBit;
+    isValidLine[line] = isSameBit && isSameLoc;
   }
   char estimatedHeads[PEEK_LENGTH + NP_DIFF_THRESHOLD];
   estimatePeekingHeads(state, isValidLine, estimatedHeads);
@@ -359,9 +438,6 @@ void estimateHeadOffsets(reader_state_t *state, encoded_bit_t bit, char *heads,
     int bestOffset = INT_MAX;
     int minCost = INT_MAX;
     for (int diff = 1; diff < NP_DIFF_THRESHOLD + 1; diff++) {
-      if (diff == 2 && state->outputCursor == 13 && line == 0) {
-        printf("breakpoint\n");
-      }
       int cost = editDistance(headDeletedBases[0], headInsertedTargets[diff],
                               PEEK_LENGTH);
       if (minCost > cost) {
@@ -395,13 +471,13 @@ void adjustErrors(reader_state_t *state) {
     }
 
     encoded_bit_t headBit = estimateHeadBit(state, heads);
-    writeOutput(state, headBit);
 
     int offsetsByLine[NP_LINES_LENGTH] = {};
     estimateHeadOffsets(state, headBit, heads, offsetsByLine);
     for (int line = 0; line < NP_LINES_LENGTH; line++) {
       state->lineCursors[line] += offsetsByLine[line] + 1;
     }
+    writeOutput(state, headBit);
   }
 }
 
