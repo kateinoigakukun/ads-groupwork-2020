@@ -7,34 +7,6 @@
 #include <time.h>
 #include <stdbool.h>
 
-#define SEGMENT_SIZE SR_SIZE
-// x = 200000/(25 - log_4(x))
-// log_4 (x) ≒ 7
-#define SEGMENT_INDEX_SIZE 7
-#define SEGMENT_CONSTRAINT_LENGTH 3
-#define HEADER_SIZE (SEGMENT_INDEX_SIZE * 2 + SEGMENT_CONSTRAINT_LENGTH - 1)
-#define SEGMENT_BODY_SIZE (SEGMENT_SIZE - HEADER_SIZE)
-
-unsigned parseUInt(unsigned char upper, unsigned char lower) {
-  return ((upper & 0x1) << 1) + (lower & 0x1);
-}
-
-unsigned char encodeUInt(unsigned value) {
-  switch (value) {
-  case 0:
-    return BASE_A;
-  case 1:
-    return BASE_C;
-  case 2:
-    return BASE_G;
-  case 3:
-    return BASE_T;
-  default:
-    fprintf(stderr, "Invalid input for encodeUInt: %d", value);
-    abort();
-  }
-}
-
 void emitNPBlock(FILE *outputFile, char *buffer) {
   for (int i = 0; i < ORGDATA_LEN; i++) {
     char value = buffer[i];
