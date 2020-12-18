@@ -19,55 +19,16 @@ int enc(){
   }
 
   unsigned char c1, c2, res;
-  int j=0;
-  int dig[7];
-  for(int i=0; i<ORGDATA_LEN; i+=2){
-    if(i%22==0){
-      int k=j;
-      rep(i,7){
-        dig[i]=k%4;
-        k/=4;
-      }
-      j++;
-      repm(i,7){
-        if(dig[i]==0){
-          fputc('A',efp);
-          fputc('A',efp);
-        }else if(dig[i]==1){
-          fputc('G',efp);
-          fputc('G',efp);
-        }else if(dig[i]==2){
-          fputc('C',efp);
-          fputc('C',efp);
-        }else{
-          fputc('T',efp);
-          fputc('T',efp);
-        }
-      }
-    }
+  char prev='X';
+  for(int i=0; i<ORGDATA_LEN; i++){
     c1 = getc(ofp);
-    c2 = getc(ofp);
-    
-    switch( ( (c1 & 0x1) << 7) >> 6 | ( c2 & 0x1) ){
-    case 0:
-      res = BASE_A;
-      break;
-    case 2:
-      res = BASE_C;      
-      break;
-    case 1:
-      res = BASE_G;      
-      break;
-    case 3:
-      res = BASE_T;      
-      break;
-    }
-    fputc(res, efp);
+    if(c1=='0')rep(j,5)fputc('A',efp);
+    else rep(j,5)fputc('T',efp);
+    fputc('G',efp);
+    fputc('C',efp);
+    fputc('G',efp);
   }
-  res = '\n';
-  fputc(res, efp);
-  
-  
+  fputc('\n',efp);
   fclose(ofp);
   fclose(efp);
   return(0);
