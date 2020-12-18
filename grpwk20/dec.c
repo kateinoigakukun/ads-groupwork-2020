@@ -1,23 +1,21 @@
 #include "grpwk20.h"
 #include <assert.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
-//#define LOG_DEBUG 1
+#define NP_LINES_LENGTH 5
+#define NP_DIFF_THRESHOLD 3
+#define PEEK_LENGTH 15
+
+#define LOG_DEBUG 1
 //#define LOG_TRACE 1
-
-#define SEGMENT_SIZE SR_SIZE
-// x = 200000/(25 - log_4(x))
-// log_4 (x) ≒ 7
-#define SEGMENT_INDEX_SIZE 7
-#define SEGMENT_CONSTRAINT_LENGTH 3
-#define SEGMENT_INDEX_STATE_COUNT (SEGMENT_CONSTRAINT_LENGTH - 1) * 2
-#define HEADER_SIZE (SEGMENT_INDEX_SIZE * 2 + SEGMENT_CONSTRAINT_LENGTH - 1)
-#define SEGMENT_BODY_SIZE (SEGMENT_SIZE - HEADER_SIZE)
-#define BS_READ_COUNT 40
 
 #define ADS_NOP                                                                \
   do {                                                                         \
@@ -39,6 +37,72 @@
 #define ADS_TRACE(X) ADS_NOP
 #endif
 
+#define ADS_FASTPATH(X) X
+
+// MARK: - Generic utils
+void reportError(char *context) {
+  perror(context);
+  exit(EXIT_FAILURE);
+}
+
+static inline int min3(int a, int b, int c) {
+  int items[3] = {a, b, c};
+  int minItem = a;
+  for (int i = 1; i < 3; i++) {
+    if (minItem > items[i]) {
+      minItem = items[i];
+    }
+  }
+  return minItem;
+}
+
+bool isAllEqualArray(char *items, int length) {
+  char head = items[0];
+  for (int idx = 1; idx < length; idx++) {
+    if (head != items[idx]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+int maxIndexOfArray(int *items, int length) {
+  int maxItem = items[0];
+  int index = 0;
+  for (int i = 1; i < length; i++) {
+    if (maxItem < items[i]) {
+      maxItem = items[i];
+      index = i;
+    }
+  }
+  return index;
+}
+
+int editDistance(char *base, char *target, int length) {
+  int costTable[length + 1][length + 1];
+  costTable[0][0] = 0;
+  for (int x = 1; x < length + 1; x++) {
+    costTable[x][0] = x;
+  }
+  for (int y = 1; y < length + 1; y++) {
+    costTable[0][y] = y;
+  }
+
+  for (int x = 1; x < length + 1; x++) {
+    for (int y = 1; y < length + 1; y++) {
+      int insertCost = costTable[x][y - 1] + 1;
+      int removeCost = costTable[x - 1][y] + 1;
+      int addend = base[x - 1] == target[x - 1] ? 0 : 1;
+      int substCost = costTable[x - 1][y - 1] + addend;
+
+      int minCost = min3(insertCost, removeCost, substCost);
+      costTable[x][y] = minCost;
+    }
+  }
+  return costTable[length][length];
+}
+
+// MARK: - En/Decoding Format
 unsigned decodeUInt(unsigned char value) {
   switch (value) {
   case BASE_A:
@@ -55,163 +119,246 @@ unsigned decodeUInt(unsigned char value) {
   }
 }
 
-int readSegmentIndex(FILE *fp) {
-  int value = 0;
-  int digits = SEGMENT_INDEX_SIZE;
-  while (digits > 0) {
-    digits--;
-    char loaded = getc(fp);
-    if (loaded == '\n')
-      return -1;
-    value += decodeUInt(loaded) << (2 * digits);
+unsigned char encodeUInt(unsigned value) {
+  switch (value) {
+  case 0:
+    return BASE_A;
+  case 1:
+    return BASE_C;
+  case 2:
+    return BASE_G;
+  case 3:
+    return BASE_T;
+  default:
+    fprintf(stderr, "Invalid input for encodeUInt: %d", value);
+    abort();
   }
-  return value;
 }
 
-int hammingDistance(int lhs, int rhs) {
-  int xored = lhs ^ rhs;
-  int distance = 0;
-  while (xored) {
-    xored &= xored - 1;
-    distance++;
-  }
-  return distance;
+typedef enum { ENCODED_BIT_ZERO, ENCODED_BIT_ONE } encoded_bit_t;
+
+encoded_bit_t decodeBit(char value) {
+  return (value == BASE_A || value == BASE_T) ? ENCODED_BIT_ZERO
+                                              : ENCODED_BIT_ONE;
 }
 
-typedef struct {
-  int output;
-  int nextState;
-} transition_output_t;
-
-transition_output_t convolutionTransition(int input, int state) {
-  int inputs[SEGMENT_CONSTRAINT_LENGTH];
-  inputs[0] = input;
-  int registerSize = SEGMENT_CONSTRAINT_LENGTH - 1;
-  for (int i = 0; i < registerSize; i++) {
-    inputs[1 + i] = (state >> (registerSize - i - 1)) & 0x1;
+// MARK: - Debug Support
+encoded_bit_t *originalBuffer;
+void readEncodedBuffer() {
+  int encdataFD;
+  if ((encdataFD = open(ORGDATA, O_RDONLY, S_IRUSR)) < 0) {
+    reportError(ORGDATA);
   }
 
-  int nextState = (state >> 1) | (input << (registerSize - 1));
-  int c0 = (inputs[0] + inputs[2]) & 0x1;
-  int c1 = (inputs[0] + inputs[1] + inputs[2]) & 0x1;
-
-  return (transition_output_t){.output = (c1 << 1) + c0,
-                               .nextState = nextState};
-}
-
-typedef struct {
-  int fromState;
-  int minPathMetric;
-  int inputBit;
-  bool isActivated;
-} state_node_t;
-
-/// See also http://caspar.hazymoon.jp/convolution/index.html
-int decodeViterbi(FILE *fp) {
-  state_node_t paths[HEADER_SIZE + 1][SEGMENT_INDEX_STATE_COUNT];
-  for (int i = 0; i < HEADER_SIZE + 1; i++) {
-    for (int j = 0; j < SEGMENT_INDEX_STATE_COUNT; j++) {
-      paths[i][j].isActivated = false;
+  char *rawBuffer =
+      mmap(NULL, ORGDATA_LEN, PROT_READ, MAP_PRIVATE, encdataFD, 0);
+  originalBuffer = malloc(sizeof(encoded_bit_t) * ORGDATA_LEN);
+  for (int idx = 0; idx < ORGDATA_LEN; idx++) {
+    switch (rawBuffer[idx]) {
+    case '0':
+      originalBuffer[idx] = ENCODED_BIT_ZERO;
+      break;
+    case '1':
+      originalBuffer[idx] = ENCODED_BIT_ONE;
+      break;
     }
   }
-  paths[0][0].fromState = 0;
-  paths[0][0].minPathMetric = 0;
-  paths[0][0].isActivated = true;
+}
 
-  for (int time = 0; time < HEADER_SIZE; time++) {
+// MARK: - Reader
 
-    char inputBitChar = getc(fp);
-    if (inputBitChar == '\n')
-      return -1;
-    int expectedOutput = decodeUInt(inputBitChar);
+typedef struct {
+  char *lines[NP_LINES_LENGTH];
+  int lineCursors[NP_LINES_LENGTH];
+  int lineLengths[NP_LINES_LENGTH];
+  int outputCursor;
+  encoded_bit_t *outputBuffer;
+} reader_state_t;
 
-    for (int state = 0; state < SEGMENT_INDEX_STATE_COUNT; state++) {
-      if (!paths[time][state].isActivated)
+reader_state_t createReader() {
+  int sourceFD;
+  if ((sourceFD = open(SEQDATA, O_RDONLY, S_IRUSR)) < 0) {
+    reportError(SEQDATA);
+  }
+
+  struct stat sb;
+  if (fstat(sourceFD, &sb) == -1) {
+    reportError("fstat");
+  }
+
+  reader_state_t state = {.outputCursor = 0};
+  state.outputBuffer = malloc(sizeof(encoded_bit_t) * ORGDATA_LEN);
+  char *buffer = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, sourceFD, 0);
+  int cursor = 0;
+  for (int line = 0; line < NP_LINES_LENGTH; line++) {
+    state.lines[line] = buffer + cursor;
+    int lineStart = cursor;
+    while (buffer[cursor] != '\n') {
+      cursor++;
+    }
+    state.lineLengths[line] = cursor - lineStart;
+    cursor++; // skip '\n'
+  }
+  assert(cursor == sb.st_size);
+  close(sourceFD);
+  return state;
+}
+
+void writeOutput(reader_state_t *state, encoded_bit_t value) {
+  ADS_DEBUG(assert(value == originalBuffer[state->outputCursor]));
+  state->outputBuffer[state->outputCursor] = value;
+  state->outputCursor++;
+}
+
+void readEachLineHead(reader_state_t *state, char *headState) {
+  for (int line = 0; line < NP_LINES_LENGTH; line++) {
+    int lineCursor = state->lineCursors[line];
+    headState[line] = state->lines[line][lineCursor];
+  }
+}
+
+void advanceLineCursors(reader_state_t *state) {
+  for (int line = 0; line < NP_LINES_LENGTH; line++) {
+    state->lineCursors[line]++;
+  }
+}
+
+encoded_bit_t estimateHeadBit(reader_state_t *state, char *heads) {
+  int zeros = 0, ones = 0;
+  for (int line = 0; line < NP_LINES_LENGTH; line++) {
+    switch (heads[line]) {
+    case BASE_A:
+    case BASE_T: {
+      if (heads[line] == (state->outputCursor % 2 ? BASE_A : BASE_T)) {
+        zeros++;
+      }
+      break;
+    }
+    case BASE_G:
+    case BASE_C: {
+      if (heads[line] == (state->outputCursor % 2 ? BASE_G : BASE_C)) {
+        ones++;
+      }
+      break;
+    }
+    default:
+      continue;
+    }
+  }
+  return zeros < ones ? ENCODED_BIT_ONE : ENCODED_BIT_ZERO;
+}
+
+// いまのカーソルの状態からPEEK_LENGTHだけ多数決で推定する
+void estimatePeekingHeads(reader_state_t *state, bool *isValidLine,
+                          char *buffer) {
+  for (int offset = 0; offset < PEEK_LENGTH + 3; offset++) {
+    bool isAllHeadsMismatched = true;
+    int charCounts[4] = {};
+    for (int line = 0; line < NP_LINES_LENGTH; line++) {
+      if (!isValidLine[line]) {
         continue;
+      }
+      if (state->lineLengths[line] < state->lineCursors[line] + offset) {
+        continue;
+      }
+      char currentChar = state->lines[line][state->lineCursors[line] + offset];
+      isAllHeadsMismatched = false;
+      charCounts[decodeUInt(currentChar)]++;
+    }
+    char picked = encodeUInt(maxIndexOfArray(charCounts, 4));
+    if (isAllHeadsMismatched) {
+      buffer[offset] = 'x';
+    } else {
+      buffer[offset] = picked;
+    }
+  }
+}
 
-      bool onlyAcceptZero = time >= SEGMENT_INDEX_SIZE * 2;
-      for (int possibleInput = 0; possibleInput <= (onlyAcceptZero ? 0 : 1);
-           possibleInput++) {
+void estimateHeadOffsets(reader_state_t *state, encoded_bit_t bit, char *heads,
+                         int *offsetsByLine) {
+  bool isValidLine[NP_LINES_LENGTH];
+  for (int line = 0; line < NP_LINES_LENGTH; line++) {
+    isValidLine[line] = bit == decodeBit(heads[line]);
+  }
+  char estimatedHeads[PEEK_LENGTH + NP_DIFF_THRESHOLD];
+  estimatePeekingHeads(state, isValidLine, estimatedHeads);
+  // headDeletedBases[0] = 本来あるはずの先頭0個が消えた状態 (そのまま)
+  // headDeletedBases[1] = 本来あるはずの先頭1個が消えた状態
+  // ...
+  char headDeletedBases[NP_DIFF_THRESHOLD + 1][PEEK_LENGTH + 1];
+  for (int diff = 0; diff < NP_DIFF_THRESHOLD + 1; diff++) {
+    for (int offset = 0; offset < PEEK_LENGTH; offset++) {
+      headDeletedBases[diff][offset] = estimatedHeads[offset + diff];
+    }
+    headDeletedBases[diff][PEEK_LENGTH] = '\0';
+  }
 
-        transition_output_t output =
-            convolutionTransition(possibleInput, state);
+  for (int line = 0; line < NP_LINES_LENGTH; line++) {
+    if (isValidLine[line]) {
+      offsetsByLine[line] = 0;
+      continue;
+    }
+    // headInsertedTargets[0] = 本来無いはずの先頭0個が消えた状態 (そのまま)
+    // headInsertedTargets[1] = 本来無いはずの先頭1個が消えた状態
+    // ...
+    char headInsertedTargets[NP_DIFF_THRESHOLD + 1][PEEK_LENGTH + 1];
+    for (int diff = 0; diff < NP_DIFF_THRESHOLD + 1; diff++) {
+      int baseCursor = state->lineCursors[line] + diff;
+      for (int offset = 0; offset < PEEK_LENGTH; offset++) {
+        headInsertedTargets[diff][offset] =
+            state->lines[line][baseCursor + offset];
+      }
+      headInsertedTargets[diff][PEEK_LENGTH] = '\0';
+    }
 
-        int branchMetric = hammingDistance(expectedOutput, output.output);
-        ADS_TRACE(printf("state = %d, nextState = %d possibleInput = %d, "
-                         "branchMetric = %d\n",
-                         state, output.nextState, possibleInput, branchMetric));
-        int pathMetric = paths[time][state].minPathMetric + branchMetric;
-
-        state_node_t *nextStates = paths[time + 1];
-        bool shouldUpdate =
-            (nextStates[output.nextState].isActivated) &&
-            nextStates[output.nextState].minPathMetric > pathMetric;
-
-        if (!nextStates[output.nextState].isActivated || shouldUpdate) {
-          nextStates[output.nextState].minPathMetric = pathMetric;
-          nextStates[output.nextState].fromState = state;
-          nextStates[output.nextState].inputBit = possibleInput;
-        }
-        nextStates[output.nextState].isActivated = true;
+    // Check insertion
+    int bestOffset = INT_MAX;
+    int minCost = INT_MAX;
+    for (int diff = 1; diff < NP_DIFF_THRESHOLD + 1; diff++) {
+      int cost = editDistance(headDeletedBases[0], headInsertedTargets[diff],
+                              PEEK_LENGTH);
+      if (minCost > cost) {
+        minCost = cost;
+        bestOffset = diff;
       }
     }
-  }
 
-  int lastState = 0;
-  int result = 0;
-  for (int time = HEADER_SIZE; HEADER_SIZE - 2 < time; time--) {
-    lastState = paths[time][lastState].fromState;
-  }
-  for (int time = HEADER_SIZE - 2; 0 < time; time--) {
-    ADS_TRACE(
-        printf("result[%d] = %d\n", time, paths[time][lastState].inputBit));
-    result |= paths[time][lastState].inputBit
-              << ((SEGMENT_INDEX_SIZE * 2) - time);
-    lastState = paths[time][lastState].fromState;
-  }
-
-  return result;
-}
-
-#define MAX_SEGMENT_INDEX ((1 << (SEGMENT_INDEX_SIZE * 2)) - 1)
-#define SEGMENT_COUNT                                                          \
-  (((ORGDATA_LEN / 2) + SEGMENT_BODY_SIZE - 1) / SEGMENT_BODY_SIZE)
-#define BSBLOCK_SIZE (SEGMENT_COUNT * SEGMENT_BODY_SIZE) // 277800
-
-void readBSLine(FILE *sourceFile, unsigned char *bsBuffer) {
-  for (int readSegmentIdx = 0; readSegmentIdx < SEGMENT_COUNT;
-       readSegmentIdx++) {
-    unsigned indexA = decodeViterbi(sourceFile);
-    ADS_TRACE(printf("segments[%d]\n", indexA));
-
-    for (int bodyIdx = 0; bodyIdx < SEGMENT_BODY_SIZE; bodyIdx++) {
-      unsigned char value = getc(sourceFile);
-      bsBuffer[indexA * SEGMENT_BODY_SIZE + bodyIdx] = value;
+    // Check deletion
+    for (int diff = 1; diff < NP_DIFF_THRESHOLD + 1; diff++) {
+      int cost = editDistance(headDeletedBases[diff], headInsertedTargets[0],
+                              PEEK_LENGTH);
+      if (minCost > cost) {
+        minCost = cost;
+        bestOffset = -diff;
+      }
     }
-  }
-  if (getc(sourceFile) != '\n') {
-    assert(false && "expect newline");
+    offsetsByLine[line] = bestOffset;
   }
 }
 
-int maxIndexOfArray(int *items, int length) {
-  int maxItem = items[0];
-  int index = 0;
-  for (int i = 1; i < length; i++) {
-    if (maxItem < items[i]) {
-      maxItem = items[i];
-      index = i;
+/// Reader main entrypoint
+void adjustErrors(reader_state_t *state) {
+  while (state->outputCursor < ORGDATA_LEN) {
+    char heads[NP_LINES_LENGTH];
+    readEachLineHead(state, heads);
+    if (ADS_FASTPATH(isAllEqualArray(heads, NP_LINES_LENGTH))) {
+      advanceLineCursors(state);
+      writeOutput(state, decodeBit(heads[0]));
+      continue;
+    }
+
+    encoded_bit_t headBit = estimateHeadBit(state, heads);
+    writeOutput(state, headBit);
+
+    int offsetsByLine[NP_LINES_LENGTH] = {};
+    estimateHeadOffsets(state, headBit, heads, offsetsByLine);
+    for (int line = 0; line < NP_LINES_LENGTH; line++) {
+      state->lineCursors[line] += offsetsByLine[line] + 1;
     }
   }
-  return index;
 }
 
 void dec(void) {
-  FILE *sourceFile;
-  if ((sourceFile = fopen(SEQDATA, "r")) == NULL) {
-    fprintf(stderr, "cannot open %s\n", SEQDATA);
-    exit(1);
-  }
 
   FILE *outputFile;
   if ((outputFile = fopen(DECDATA, "w")) == NULL) {
@@ -219,31 +366,22 @@ void dec(void) {
     exit(1);
   }
 
-  unsigned char bsBuffer[BS_READ_COUNT][MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE];
+  ADS_DEBUG(readEncodedBuffer());
+  reader_state_t state = createReader();
+  adjustErrors(&state);
 
-  for (int i = 0; i < BS_READ_COUNT; i++) {
-    readBSLine(sourceFile, bsBuffer[i]);
-  }
-
-  int outputBuffer[MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE];
-  for (int i = 0; i < MAX_SEGMENT_INDEX * SEGMENT_BODY_SIZE; i++) {
-    int candidates[4] = { 0 };
-    for (int epoch = 0; epoch < BS_READ_COUNT; epoch++) {
-      int code = decodeUInt(bsBuffer[epoch][i]);
-      candidates[code]++;
+  for (int idx = 0; idx < ORGDATA_LEN; idx++) {
+    switch (state.outputBuffer[idx]) {
+    case ENCODED_BIT_ZERO:
+      fputc('0', outputFile);
+      break;
+    case ENCODED_BIT_ONE:
+      fputc('1', outputFile);
+      break;
     }
-    outputBuffer[i] = maxIndexOfArray(candidates, 4);
   }
-
-  for (int index = 0; index < ORGDATA_LEN/2; index++) {
-    unsigned value = outputBuffer[index];
-    fputc((value >> 1) + '0', outputFile);
-    fputc((value & 0x1) + '0', outputFile);
-  }
-
   fputc('\n', outputFile);
 
-  fclose(sourceFile);
   fclose(outputFile);
   return;
 }
