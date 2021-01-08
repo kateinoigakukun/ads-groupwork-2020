@@ -223,9 +223,9 @@ reader_state_t createReader() {
     reportError("fstat");
   }
 
-  
   int outputFD;
-  if ((outputFD = open(DECDATA, O_CREAT | O_APPEND | O_RDWR, S_IRUSR | S_IWUSR)) == -1) {
+  if ((outputFD = open(DECDATA, O_CREAT | O_APPEND | O_RDWR,
+                       S_IRUSR | S_IWUSR)) == -1) {
     reportError(DECDATA);
   }
 
@@ -234,7 +234,8 @@ reader_state_t createReader() {
 
   reader_state_t state = {.outputCursor = 0};
   state.outputFD = outputFD;
-  state.outputBuffer = mmap(NULL, ORGDATA_LEN + 1, PROT_READ | PROT_WRITE, MAP_SHARED, outputFD, 0);
+  state.outputBuffer = mmap(NULL, ORGDATA_LEN + 1, PROT_READ | PROT_WRITE,
+                            MAP_SHARED, outputFD, 0);
   if (state.outputBuffer == MAP_FAILED) {
     reportError("DECDATA MAP_FAILED");
   }
@@ -288,11 +289,9 @@ void dumpState(reader_state_t *state) {
     for (int cursor = max2(baseCursor - 10, 0); cursor < baseCursor; cursor++) {
       char ch;
       if (cursor % 2 == 0) {
-        ch =
-            (state->outputBuffer[cursor] == '0') ? BASE_T : BASE_C;
+        ch = (state->outputBuffer[cursor] == '0') ? BASE_T : BASE_C;
       } else {
-        ch =
-            (state->outputBuffer[cursor] == '0') ? BASE_A : BASE_G;
+        ch = (state->outputBuffer[cursor] == '0') ? BASE_A : BASE_G;
       }
       printf("%c", ch);
     }
@@ -450,7 +449,8 @@ void estimateHeadOffsets(reader_state_t *state, char bit, char *heads,
     int bestOffset = INT_MAX;
     int minCost = INT_MAX;
     for (int diff = 1; diff < NP_DIFF_THRESHOLD + 1; diff++) {
-      int cost = peekingEditDistance(headDeletedBases[0], headInsertedTargets[diff]);
+      int cost =
+          peekingEditDistance(headDeletedBases[0], headInsertedTargets[diff]);
       if (minCost > cost) {
         minCost = cost;
         bestOffset = diff;
@@ -459,7 +459,8 @@ void estimateHeadOffsets(reader_state_t *state, char bit, char *heads,
 
     // Check deletion
     for (int diff = 1; diff < NP_DIFF_THRESHOLD + 1; diff++) {
-      int cost = peekingEditDistance(headDeletedBases[diff], headInsertedTargets[0]);
+      int cost =
+          peekingEditDistance(headDeletedBases[diff], headInsertedTargets[0]);
       if (minCost > cost) {
         minCost = cost;
         bestOffset = -diff;
