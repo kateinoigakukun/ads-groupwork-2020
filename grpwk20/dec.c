@@ -120,8 +120,8 @@ void dumpCostTable(int **costTable, char *base, int baseLength, char *target,
   printf("\n");
 }
 
+int costTable[PEEK_LENGTH][PEEK_LENGTH];
 int peekingEditDistance(char *base, char *target) {
-  int costTable[PEEK_LENGTH][PEEK_LENGTH];
   int length = PEEK_LENGTH;
   costTable[0][0] = 0;
   for (int x = 1; x < length + 1; x++) {
