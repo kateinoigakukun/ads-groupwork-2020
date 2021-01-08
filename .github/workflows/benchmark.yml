@@ -3,6 +3,7 @@ jobs:
   benchmark:
     runs-on: ubuntu-20.04
     name: Benchmark
+    timeout-minutes: 5
     steps:
     - uses: actions/checkout@v2
     - run: make all

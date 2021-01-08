@@ -3,6 +3,7 @@ jobs:
   compare-benchmark:
     runs-on: ubuntu-20.04
     name: Compare benchmark
+    timeout-minutes: 5
     steps:
     - uses: actions/checkout@v2
       with:
