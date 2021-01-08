@@ -82,8 +82,12 @@ int maxIndexOfArray(int *items, int length) {
   return index;
 }
 
+
+int costTable[PEEK_LENGTH + 1][PEEK_LENGTH + 1];
+int opTable[PEEK_LENGTH + 1][PEEK_LENGTH + 1];
+
 // MARK: - Debug Support for edit distance
-void dumpCostTable(int **costTable, char *base, int baseLength, char *target,
+void dumpCostTable(char *base, int baseLength, char *target,
                    int targetLength) {
   printf("|   |");
   for (int y = 0; y < baseLength + 1; y++) {
@@ -122,7 +126,7 @@ void dumpCostTable(int **costTable, char *base, int baseLength, char *target,
   printf("\n");
 }
 
-int costTable[PEEK_LENGTH + 1][PEEK_LENGTH + 1];
+
 int peekingEditDistance(char *base, char *target) {
   int length = PEEK_LENGTH;
   costTable[0][0] = 0;
@@ -145,6 +149,181 @@ int peekingEditDistance(char *base, char *target) {
     }
   }
   return costTable[length][length];
+}
+
+typedef enum {
+  EDIT_OP_NONE = 0,
+  EDIT_OP_INSERT = 1,
+  EDIT_OP_REMOVE = 1 << 1,
+  EDIT_OP_SUBST = 1 << 2,
+  EDIT_OP_NOP = 1 << 3
+} edit_op_kind_t;
+
+typedef struct {
+  edit_op_kind_t kind;
+  unsigned char payload1;
+  unsigned char payload2;
+  int bsIndex;
+} edit_op_t;
+
+void dumpOpTable(char *bsBuffer,
+                 int bsLength, char *npBuffer, int npLength) {
+  printf("|   |");
+  for (int y = 0; y < bsLength + 1; y++) {
+    printf("  %2d  |", y);
+  }
+  printf("\n");
+
+  printf("|   |   x  |");
+
+  for (int y = 0; y < bsLength; y++) {
+    printf("   %c  |", bsBuffer[y]);
+  }
+  printf("\n");
+  printf("│───┼──────┼");
+  for (int y = 0; y < bsLength; y++) {
+    printf("──────┼");
+  }
+  printf("\n");
+
+  for (int x = 0; x < npLength + 1; x++) {
+    if (x == 0) {
+      printf("| x |");
+    } else {
+      printf("| %c |", npBuffer[x - 1]);
+    }
+    for (int y = 0; y < bsLength + 1; y++) {
+      char symbol[4] = {0};
+      int symbolCount = 0;
+      if (opTable[x][y] == EDIT_OP_NONE) {
+        printf("   X  |");
+        continue;
+      }
+      if ((opTable[x][y] & EDIT_OP_INSERT) != 0) {
+        symbol[symbolCount] = 'I';
+        symbolCount++;
+      }
+      if ((opTable[x][y] & EDIT_OP_REMOVE) != 0) {
+        symbol[symbolCount] = 'R';
+        symbolCount++;
+      }
+      if ((opTable[x][y] & EDIT_OP_SUBST) != 0) {
+        symbol[symbolCount] = 'S';
+        symbolCount++;
+      }
+      if ((opTable[x][y] & EDIT_OP_NOP) != 0) {
+        symbol[symbolCount] = 'N';
+        symbolCount++;
+      }
+      printf(" %4s |", symbol);
+    }
+    printf("\n");
+  }
+  printf("\n");
+}
+
+/// Returns the length of edit operations
+int calculateEditOperations(char *bsBuffer, int bsLength,
+                            char *npBuffer, int npLength,
+                            edit_op_t *bestOps) {
+
+  for (int x = 0; x < npLength + 1; x++) {
+    costTable[x][0] = x;
+    opTable[x][0] = EDIT_OP_REMOVE;
+  }
+  costTable[0][0] = 0;
+  opTable[0][1] = EDIT_OP_INSERT | EDIT_OP_REMOVE;
+  costTable[0][1] = 1;
+  opTable[0][1] = EDIT_OP_INSERT;
+  for (int y = 2; y < bsLength + 1; y++) {
+    costTable[0][y] = y;
+    opTable[0][y] = EDIT_OP_INSERT;
+  }
+  opTable[0][0] = EDIT_OP_NONE;
+
+  for (int x = 1; x < npLength + 1; x++) {
+    for (int y = 1; y < bsLength + 1; y++) {
+
+      int insertCost = costTable[x][y - 1] + 1;
+      int removeCost = costTable[x - 1][y] + 1;
+      int matchCost = bsBuffer[y - 1] == npBuffer[x - 1] ? costTable[x - 1][y - 1] : INT_MAX;
+
+      int minOpCost = min3(insertCost, removeCost, matchCost);
+      edit_op_kind_t possibleOp = EDIT_OP_NONE;
+      if (insertCost == minOpCost) {
+        possibleOp |= EDIT_OP_INSERT;
+      }
+
+      if (removeCost == minOpCost) {
+        possibleOp |= EDIT_OP_REMOVE;
+      }
+
+      if (matchCost == minOpCost) {
+        possibleOp |= EDIT_OP_NOP;
+      }
+      assert(possibleOp != 0);
+      costTable[x][y] = minOpCost;
+      opTable[x][y] = possibleOp;
+    }
+  }
+
+  int x = npLength;
+  int y = bsLength;
+  int opCount = 0;
+  while (x > 0 || y > 0) {
+    if ((opTable[x][y] & EDIT_OP_NOP) != 0) {
+      bestOps[opCount] = (edit_op_t){
+          .kind = EDIT_OP_NOP,
+          .payload1 = npBuffer[x - 1],
+          .bsIndex = y - 1,
+      };
+      ADS_DEBUG(assert(npBuffer[x - 1] == bsBuffer[y - 1]));
+      opCount++;
+      x--;
+      y--;
+    } else if ((opTable[x][y] & EDIT_OP_INSERT) != 0) {
+      bestOps[opCount] = (edit_op_t){
+          .kind = EDIT_OP_INSERT,
+          .payload1 = bsBuffer[y - 1],
+          .bsIndex = y - 1,
+      };
+      opCount++;
+      y--;
+    } else if ((opTable[x][y] & EDIT_OP_REMOVE) != 0) {
+      bestOps[opCount] = (edit_op_t){
+          .kind = EDIT_OP_REMOVE,
+          .payload1 = npBuffer[x - 1],
+          .bsIndex = y - 1,
+      };
+      opCount++;
+      x--;
+    } else {
+      ADS_DEBUG(assert(false && "Invalid state"));
+    }
+  }
+  return opCount;
+}
+
+void dumpEditOps(edit_op_t *ops, int opLength) {
+  for (int i = opLength - 1; i >= 0; i--) {
+    printf("edit[%2d][bs_index=%2d]: ", opLength - i - 1, ops[i].bsIndex);
+    switch (ops[i].kind) {
+    case EDIT_OP_SUBST:
+      printf("subst '%c' with '%c'\n", ops[i].payload1, ops[i].payload2);
+      break;
+    case EDIT_OP_NOP:
+      printf("nop '%c'\n", ops[i].payload1);
+      break;
+    case EDIT_OP_INSERT:
+      printf("insert '%c'\n", ops[i].payload1);
+      break;
+    case EDIT_OP_REMOVE:
+      printf("remove '%c'\n", ops[i].payload1);
+      break;
+    default:
+      break;
+    }
+  }
 }
 
 // MARK: - En/Decoding Format
@@ -283,7 +462,7 @@ void dumpState(reader_state_t *state) {
     int baseCursor = state->outputCursor;
     printf("Output buffer: [cursor = %6d]\n", baseCursor);
     for (int cursor = max2(baseCursor - 10, 0); cursor < baseCursor; cursor++) {
-      printf("%1d", state->outputBuffer[cursor]);
+      printf("%c", state->outputBuffer[cursor]);
     }
     printf("[x]xxxxxxxxx\n");
     for (int cursor = max2(baseCursor - 10, 0); cursor < baseCursor; cursor++) {
@@ -303,9 +482,9 @@ void dumpState(reader_state_t *state) {
     for (int cursor = max2(baseCursor - 10, 0); cursor < baseCursor + 10;
          cursor++) {
       if (cursor == baseCursor) {
-        printf("[%d]", originalBuffer[cursor]);
+        printf("[%c]", originalBuffer[cursor]);
       } else {
-        printf("%d", originalBuffer[cursor]);
+        printf("%c", originalBuffer[cursor]);
       }
     }
     printf("\n");
@@ -405,6 +584,26 @@ void estimatePeekingHeads(reader_state_t *state, bool *isValidLine,
   }
 }
 
+int offsetFromEditOps(edit_op_t *ops, int opsLength) {
+  int index = opsLength - 1;
+  int offset = 0;
+  while (index < opsLength && ops[index].kind != EDIT_OP_NOP) {
+    switch (ops[index].kind) {
+      case EDIT_OP_INSERT:
+        offset -= 1;
+        break;
+      case EDIT_OP_REMOVE:
+        offset += 1;
+        break;
+      default:
+        ADS_DEBUG(assert(false));
+        break;
+    }
+    index -= 1;
+  }
+  return offset;
+}
+
 void estimateHeadOffsets(reader_state_t *state, char bit, char *heads,
                          int *offsetsByLine) {
   bool isValidLine[NP_LINES_LENGTH];
@@ -416,56 +615,12 @@ void estimateHeadOffsets(reader_state_t *state, char bit, char *heads,
   }
   char estimatedHeads[PEEK_LENGTH + NP_DIFF_THRESHOLD];
   estimatePeekingHeads(state, isValidLine, estimatedHeads);
-  // headDeletedBases[0] = 本来あるはずの先頭0個が消えた状態 (そのまま)
-  // headDeletedBases[1] = 本来あるはずの先頭1個が消えた状態
-  // ...
-  char headDeletedBases[NP_DIFF_THRESHOLD + 1][PEEK_LENGTH + 1];
-  for (int diff = 0; diff < NP_DIFF_THRESHOLD + 1; diff++) {
-    for (int offset = 0; offset < PEEK_LENGTH; offset++) {
-      headDeletedBases[diff][offset] = estimatedHeads[offset + diff];
-    }
-    headDeletedBases[diff][PEEK_LENGTH] = '\0';
-  }
 
   for (int line = 0; line < NP_LINES_LENGTH; line++) {
-    if (isValidLine[line]) {
-      offsetsByLine[line] = 0;
-      continue;
-    }
-    // headInsertedTargets[0] = 本来無いはずの先頭0個が消えた状態 (そのまま)
-    // headInsertedTargets[1] = 本来無いはずの先頭1個が消えた状態
-    // ...
-    char headInsertedTargets[NP_DIFF_THRESHOLD + 1][PEEK_LENGTH + 1];
-    for (int diff = 0; diff < NP_DIFF_THRESHOLD + 1; diff++) {
-      int baseCursor = state->lineCursors[line] + diff;
-      for (int offset = 0; offset < PEEK_LENGTH; offset++) {
-        headInsertedTargets[diff][offset] =
-            state->lines[line][baseCursor + offset];
-      }
-      headInsertedTargets[diff][PEEK_LENGTH] = '\0';
-    }
-
-    // Check insertion
-    int bestOffset = INT_MAX;
-    int minCost = INT_MAX;
-    for (int diff = 1; diff < NP_DIFF_THRESHOLD + 1; diff++) {
-      int cost =
-          peekingEditDistance(headDeletedBases[0], headInsertedTargets[diff]);
-      if (minCost > cost) {
-        minCost = cost;
-        bestOffset = diff;
-      }
-    }
-
-    // Check deletion
-    for (int diff = 1; diff < NP_DIFF_THRESHOLD + 1; diff++) {
-      int cost =
-          peekingEditDistance(headDeletedBases[diff], headInsertedTargets[0]);
-      if (minCost > cost) {
-        minCost = cost;
-        bestOffset = -diff;
-      }
-    }
+    edit_op_t bestOps[PEEK_LENGTH * 2];
+    int opsLen = calculateEditOperations(estimatedHeads, PEEK_LENGTH,
+                                         state->lines[line] + state->lineCursors[line], PEEK_LENGTH, bestOps);
+    int bestOffset = offsetFromEditOps(bestOps, opsLen);
     offsetsByLine[line] = bestOffset;
   }
 }
@@ -497,7 +652,7 @@ void dec(void) {
   ADS_DEBUG(readEncodedBuffer());
   reader_state_t state = createReader();
   adjustErrors(&state);
-  writeOutput(&state, '\n');
+  state.outputBuffer[state.outputCursor] = '\n';
   finalizeReader(&state);
 
   return;
