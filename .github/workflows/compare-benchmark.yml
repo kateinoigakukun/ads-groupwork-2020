@@ -3,6 +3,7 @@ jobs:
   compare-benchmark:
     runs-on: ubuntu-20.04
     name: Compare benchmark
+    timeout-minutes: 5
     steps:
     - uses: actions/checkout@v2
       with:
@@ -22,3 +23,16 @@ jobs:
         script: |
           const { issue: { number: issue_number }, repo: { owner, repo }  } = context;
           github.issues.createComment({ issue_number, owner, repo, body: '```diff\n${{ steps.run-benchmark.outputs.result }}\n```' });
+    - id: run-success-rate-check
+      run: |
+        make harness
+        result="$(./harness 50)"
+        result="${result//$'\n'/\\n}"
+        echo "::set-output name=result::$result"
+      working-directory: ./grpwk20
+    - uses: actions/github-script@0.3.0
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const { issue: { number: issue_number }, repo: { owner, repo }  } = context;
+          github.issues.createComment({ issue_number, owner, repo, body: '${{ steps.run-success-rate-check.outputs.result }}' });

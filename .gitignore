@@ -1,3 +1,6 @@
 /.artifacts
 /project.yml
 /*.xcodeproj
+/bin
+/package
+.DS_Store

@@ -4,6 +4,7 @@ syn
 seq
 dec
 eval
+harness
 gendata
 encdata
 syndna

@@ -1,51 +1,62 @@
+#include "grpwk20.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include "grpwk20.h"
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <time.h>
+#include <stdbool.h>
 
-int enc(){
-  FILE *ofp;
-  if((ofp = fopen(ORGDATA, "r")) ==NULL){
+#pragma GCC optimize("Ofast")
+
+void emitNPBlock(FILE *outputFile, char *buffer) {
+  for (int i = 0; i < ORGDATA_LEN; i++) {
+    char value = buffer[i];
+    fputc(value, outputFile);
+  }
+}
+
+int enc(void) {
+  int sourceFD;
+  if ((sourceFD = open(ORGDATA, O_RDONLY, S_IRUSR)) < 0) {
     fprintf(stderr, "cannot open %s\n", ORGDATA);
     exit(1);
   }
 
-  FILE *efp;
-  if((efp = fopen(ENCDATA, "w")) ==NULL){
+  FILE *outputFile;
+  if ((outputFile = fopen(ENCDATA, "w")) == NULL) {
     fprintf(stderr, "cannot open %s\n", ENCDATA);
     exit(1);
   }
 
-  unsigned char c1, c2, res;
-  for(int i=0; i<ORGDATA_LEN; i+=2){
-    c1 = getc(ofp);
-    c2 = getc(ofp);
-    
-    switch( ( (c1 & 0x1) << 7) >> 6 | ( c2 & 0x1) ){
-    case 0:
-      res = BASE_A;
-      break;
-    case 1:
-      res = BASE_C;      
-      break;
-    case 2:
-      res = BASE_G;      
-      break;
-    case 3:
-      res = BASE_T;      
-      break;
+  char buffer[ORGDATA_LEN];
+  char *rawBuffer;
+  rawBuffer = mmap(NULL, ORGDATA_LEN, PROT_READ, MAP_PRIVATE, sourceFD, 0);
+
+  // 左から1bit目をT or C、2bit目をA or Gで表現する
+  // T and A = 0, C and G = 1
+  for (int cursor = 0; cursor < ORGDATA_LEN; cursor += 2) {
+    char upperBit = rawBuffer[cursor];
+    char lowerBit = rawBuffer[cursor + 1];
+    switch (upperBit) {
+    case '0': buffer[cursor] = BASE_T; break;
+    case '1': buffer[cursor] = BASE_C; break;
     }
-    fputc(res, efp);
+    switch (lowerBit) {
+    case '0': buffer[cursor + 1] = BASE_A; break;
+    case '1': buffer[cursor + 1] = BASE_G; break;
+    }
   }
-  res = '\n';
-  fputc(res, efp);
-  
-  
-  fclose(ofp);
-  fclose(efp);
-  return(0);
+
+  emitNPBlock(outputFile, buffer);
+
+  fputc('\n', outputFile);
+  close(sourceFD);
+  fclose(outputFile);
+  return 0;
 }
 
-int main(){
+int main(void) {
   enc();
-  return(0);
+  return 0;
 }
