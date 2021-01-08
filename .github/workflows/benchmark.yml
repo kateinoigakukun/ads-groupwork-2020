@@ -9,3 +9,16 @@ jobs:
       working-directory: ./grpwk20
     - run: ./test.sh $(cat conf.txt | tail -n1)
       working-directory: ./grpwk20
+    - id: run-success-rate-check
+      run: |
+        make harness
+        result="$(./harness 50)"
+        result="${result//$'\n'/\\n}"
+        echo "::set-output name=result::$result"
+      working-directory: ./grpwk20
+    - uses: actions/github-script@0.3.0
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const { issue: { number: issue_number }, repo: { owner, repo }  } = context;
+          github.issues.createComment({ issue_number, owner, repo, body: '```diff\n${{ steps.run-success-rate-check.outputs.result }}\n```' });
