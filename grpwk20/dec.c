@@ -204,6 +204,7 @@ typedef struct {
   int lineLengths[NP_LINES_LENGTH];
   int outputCursor;
   char *outputBuffer;
+  int outputFD;
 } reader_state_t;
 
 reader_state_t createReader() {
@@ -225,10 +226,11 @@ reader_state_t createReader() {
   }
 
   // extend file size
-  ftruncate(outputFD, ORGDATA_LEN);
+  ftruncate(outputFD, ORGDATA_LEN + 1);
 
   reader_state_t state = {.outputCursor = 0};
-  state.outputBuffer = mmap(NULL, ORGDATA_LEN, PROT_READ | PROT_WRITE, MAP_SHARED, outputFD, 0);
+  state.outputFD = outputFD;
+  state.outputBuffer = mmap(NULL, ORGDATA_LEN + 1, PROT_READ | PROT_WRITE, MAP_SHARED, outputFD, 0);
   if (state.outputBuffer == MAP_FAILED) {
     reportError("DECDATA MAP_FAILED");
   }
@@ -250,7 +252,9 @@ reader_state_t createReader() {
 }
 
 void finalizeReader(reader_state_t *state) {
-  msync(state->outputBuffer, ORGDATA_LEN, 0);
+  msync(state->outputBuffer, ORGDATA_LEN + 1, 0);
+  munmap(state->outputBuffer, ORGDATA_LEN + 1);
+  close(state->outputFD);
 }
 
 void dumpState(reader_state_t *state) {
