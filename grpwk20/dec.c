@@ -120,11 +120,9 @@ void dumpCostTable(int **costTable, char *base, int baseLength, char *target,
   printf("\n");
 }
 
-int editDistance(char *base, char *target, int length) {
-  int **costTable = malloc(sizeof(int *) * (length + 1));
-  for (int x = 0; x < length + 1; x++) {
-    costTable[x] = malloc(sizeof(int) * (length + 1));
-  }
+int peekingEditDistance(char *base, char *target) {
+  int costTable[PEEK_LENGTH][PEEK_LENGTH];
+  int length = PEEK_LENGTH;
   costTable[0][0] = 0;
   for (int x = 1; x < length + 1; x++) {
     costTable[x][0] = x;
@@ -438,8 +436,7 @@ void estimateHeadOffsets(reader_state_t *state, encoded_bit_t bit, char *heads,
     int bestOffset = INT_MAX;
     int minCost = INT_MAX;
     for (int diff = 1; diff < NP_DIFF_THRESHOLD + 1; diff++) {
-      int cost = editDistance(headDeletedBases[0], headInsertedTargets[diff],
-                              PEEK_LENGTH);
+      int cost = peekingEditDistance(headDeletedBases[0], headInsertedTargets[diff]);
       if (minCost > cost) {
         minCost = cost;
         bestOffset = diff;
@@ -448,8 +445,7 @@ void estimateHeadOffsets(reader_state_t *state, encoded_bit_t bit, char *heads,
 
     // Check deletion
     for (int diff = 1; diff < NP_DIFF_THRESHOLD + 1; diff++) {
-      int cost = editDistance(headDeletedBases[diff], headInsertedTargets[0],
-                              PEEK_LENGTH);
+      int cost = peekingEditDistance(headDeletedBases[diff], headInsertedTargets[0]);
       if (minCost > cost) {
         minCost = cost;
         bestOffset = -diff;
