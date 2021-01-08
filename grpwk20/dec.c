@@ -207,25 +207,32 @@ typedef struct {
 } reader_state_t;
 
 reader_state_t createReader() {
+  int error;
   int sourceFD;
   if ((sourceFD = open(SEQDATA, O_RDONLY, S_IRUSR)) < 0) {
     reportError(SEQDATA);
   }
 
   struct stat sb;
-  if (fstat(sourceFD, &sb) == -1) {
+  if ((error = fstat(sourceFD, &sb)) == -1) {
     reportError("fstat");
   }
 
   
   int outputFD;
-  if ((outputFD = open(DECDATA, O_CREAT | O_RDWR, S_IRUSR)) < 0) {
+  if ((outputFD = open(DECDATA, O_CREAT | O_APPEND | O_RDWR, S_IRUSR | S_IWUSR)) == -1) {
     reportError(DECDATA);
   }
 
+  // extend file size
+  ftruncate(outputFD, ORGDATA_LEN);
+
   reader_state_t state = {.outputCursor = 0};
-  state.outputBuffer = mmap(NULL, ORGDATA_LEN, PROT_WRITE, MAP_SHARED, outputFD, 0);
-  
+  state.outputBuffer = mmap(NULL, ORGDATA_LEN, PROT_READ | PROT_WRITE, MAP_SHARED, outputFD, 0);
+  if (state.outputBuffer == MAP_FAILED) {
+    reportError("DECDATA MAP_FAILED");
+  }
+
   char *buffer = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, sourceFD, 0);
   int cursor = 0;
   for (int line = 0; line < NP_LINES_LENGTH; line++) {
