@@ -13,7 +13,6 @@
 #pragma GCC optimize("Ofast")
 
 #define NP_LINES_LENGTH 5
-#define NP_DIFF_THRESHOLD 3
 #define PEEK_LENGTH 15
 
 //#define LOG_DEBUG 1
@@ -561,7 +560,7 @@ char estimateHeadBit(reader_state_t *state, char *heads) {
 // いまのカーソルの状態からPEEK_LENGTHだけ多数決で推定する
 void estimatePeekingHeads(reader_state_t *state, bool *isValidLine,
                           char *buffer) {
-  for (int offset = 0; offset < PEEK_LENGTH + 3; offset++) {
+  for (int offset = 0; offset < PEEK_LENGTH; offset++) {
     bool isAllHeadsMismatched = true;
     int charCounts[4] = {};
     for (int line = 0; line < NP_LINES_LENGTH; line++) {
@@ -613,7 +612,7 @@ void estimateHeadOffsets(reader_state_t *state, char bit, char *heads,
     bool isSameLoc = (state->outputCursor % 2 == 0) == isUpperBit;
     isValidLine[line] = isSameBit && isSameLoc;
   }
-  char estimatedHeads[PEEK_LENGTH + NP_DIFF_THRESHOLD];
+  char estimatedHeads[PEEK_LENGTH];
   estimatePeekingHeads(state, isValidLine, estimatedHeads);
 
   for (int line = 0; line < NP_LINES_LENGTH; line++) {
