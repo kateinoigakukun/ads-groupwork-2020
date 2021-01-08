@@ -13,7 +13,7 @@
 #pragma GCC optimize("Ofast")
 
 #define NP_LINES_LENGTH 5
-#define PEEK_LENGTH 15
+#define PEEK_LENGTH 13
 
 //#define LOG_DEBUG 1
 //#define LOG_TRACE 1
