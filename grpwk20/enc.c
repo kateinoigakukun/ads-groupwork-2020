@@ -7,6 +7,8 @@
 #include <time.h>
 #include <stdbool.h>
 
+#pragma GCC optimize("Ofast")
+
 void emitNPBlock(FILE *outputFile, char *buffer) {
   for (int i = 0; i < ORGDATA_LEN; i++) {
     char value = buffer[i];
