@@ -125,31 +125,6 @@ void dumpCostTable(char *base, int baseLength, char *target,
   printf("\n");
 }
 
-
-int peekingEditDistance(char *base, char *target) {
-  int length = PEEK_LENGTH;
-  costTable[0][0] = 0;
-  for (int x = 1; x < length + 1; x++) {
-    costTable[x][0] = x;
-  }
-  for (int y = 1; y < length + 1; y++) {
-    costTable[0][y] = y;
-  }
-
-  for (int x = 1; x < length + 1; x++) {
-    for (int y = 1; y < length + 1; y++) {
-      int insertCost = costTable[x][y - 1] + 1;
-      int removeCost = costTable[x - 1][y] + 1;
-      int matchCost =
-          base[y - 1] == target[x - 1] ? costTable[x - 1][y - 1] : INT_MAX;
-
-      int minCost = min3(insertCost, removeCost, matchCost);
-      costTable[x][y] = minCost;
-    }
-  }
-  return costTable[length][length];
-}
-
 typedef enum {
   EDIT_OP_NONE = 0,
   EDIT_OP_INSERT = 1,
@@ -222,11 +197,10 @@ void dumpOpTable(char *bsBuffer,
 }
 
 /// Returns the length of edit operations
-int calculateEditOperations(char *bsBuffer, int bsLength,
-                            char *npBuffer, int npLength,
-                            edit_op_t *bestOps) {
+int calculateEditOperations(char *base, char *target, edit_op_t *bestOps) {
 
-  for (int x = 0; x < npLength + 1; x++) {
+  int length = PEEK_LENGTH;
+  for (int x = 0; x < length + 1; x++) {
     costTable[x][0] = x;
     opTable[x][0] = EDIT_OP_REMOVE;
   }
@@ -234,18 +208,18 @@ int calculateEditOperations(char *bsBuffer, int bsLength,
   opTable[0][1] = EDIT_OP_INSERT | EDIT_OP_REMOVE;
   costTable[0][1] = 1;
   opTable[0][1] = EDIT_OP_INSERT;
-  for (int y = 2; y < bsLength + 1; y++) {
+  for (int y = 2; y < PEEK_LENGTH + 1; y++) {
     costTable[0][y] = y;
     opTable[0][y] = EDIT_OP_INSERT;
   }
   opTable[0][0] = EDIT_OP_NONE;
 
-  for (int x = 1; x < npLength + 1; x++) {
-    for (int y = 1; y < bsLength + 1; y++) {
+  for (int x = 1; x < PEEK_LENGTH + 1; x++) {
+    for (int y = 1; y < PEEK_LENGTH + 1; y++) {
 
       int insertCost = costTable[x][y - 1] + 1;
       int removeCost = costTable[x - 1][y] + 1;
-      int matchCost = bsBuffer[y - 1] == npBuffer[x - 1] ? costTable[x - 1][y - 1] : INT_MAX;
+      int matchCost = base[y - 1] == target[x - 1] ? costTable[x - 1][y - 1] : INT_MAX;
 
       int minOpCost = min3(insertCost, removeCost, matchCost);
       edit_op_kind_t possibleOp = EDIT_OP_NONE;
@@ -266,14 +240,14 @@ int calculateEditOperations(char *bsBuffer, int bsLength,
     }
   }
 
-  int x = npLength;
-  int y = bsLength;
+  int x = length;
+  int y = length;
   int opCount = 0;
   while (x > 0 || y > 0) {
     if ((opTable[x][y] & EDIT_OP_NOP) != 0) {
       bestOps[opCount] = (edit_op_t){
           .kind = EDIT_OP_NOP,
-          .payload1 = npBuffer[x - 1],
+          .payload1 = target[x - 1],
           .bsIndex = y - 1,
       };
       ADS_DEBUG(assert(npBuffer[x - 1] == bsBuffer[y - 1]));
@@ -283,7 +257,7 @@ int calculateEditOperations(char *bsBuffer, int bsLength,
     } else if ((opTable[x][y] & EDIT_OP_INSERT) != 0) {
       bestOps[opCount] = (edit_op_t){
           .kind = EDIT_OP_INSERT,
-          .payload1 = bsBuffer[y - 1],
+          .payload1 = base[y - 1],
           .bsIndex = y - 1,
       };
       opCount++;
@@ -291,7 +265,7 @@ int calculateEditOperations(char *bsBuffer, int bsLength,
     } else if ((opTable[x][y] & EDIT_OP_REMOVE) != 0) {
       bestOps[opCount] = (edit_op_t){
           .kind = EDIT_OP_REMOVE,
-          .payload1 = npBuffer[x - 1],
+          .payload1 = target[x - 1],
           .bsIndex = y - 1,
       };
       opCount++;
@@ -617,8 +591,7 @@ void estimateHeadOffsets(reader_state_t *state, char bit, char *heads,
 
   for (int line = 0; line < NP_LINES_LENGTH; line++) {
     edit_op_t bestOps[PEEK_LENGTH * 2];
-    int opsLen = calculateEditOperations(estimatedHeads, PEEK_LENGTH,
-                                         state->lines[line] + state->lineCursors[line], PEEK_LENGTH, bestOps);
+    int opsLen = calculateEditOperations(estimatedHeads, state->lines[line] + state->lineCursors[line], bestOps);
     int bestOffset = offsetFromEditOps(bestOps, opsLen);
     offsetsByLine[line] = bestOffset;
   }
