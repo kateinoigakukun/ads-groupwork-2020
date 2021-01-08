@@ -590,6 +590,10 @@ void estimateHeadOffsets(reader_state_t *state, char bit, char *heads,
   estimatePeekingHeads(state, isValidLine, estimatedHeads);
 
   for (int line = 0; line < NP_LINES_LENGTH; line++) {
+    if (ADS_FASTPATH(isValidLine[line])) {
+      offsetsByLine[line] = 0;
+      continue;
+    }
     edit_op_t bestOps[PEEK_LENGTH * 2];
     int opsLen = calculateEditOperations(estimatedHeads, state->lines[line] + state->lineCursors[line], bestOps);
     int bestOffset = offsetFromEditOps(bestOps, opsLen);
