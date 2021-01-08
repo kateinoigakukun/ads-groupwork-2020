@@ -176,15 +176,12 @@ char encodeUInt(unsigned value) {
   }
 }
 
-typedef enum { ENCODED_BIT_ZERO, ENCODED_BIT_ONE } encoded_bit_t;
-
-encoded_bit_t decodeBit(char value) {
-  return (value == BASE_A || value == BASE_T) ? ENCODED_BIT_ZERO
-                                              : ENCODED_BIT_ONE;
+char decodeBit(char value) {
+  return (value == BASE_A || value == BASE_T) ? '0' : '1';
 }
 
 // MARK: - Debug Support
-encoded_bit_t *originalBuffer;
+char *originalBuffer;
 void readEncodedBuffer() {
   int encdataFD;
   if ((encdataFD = open(ORGDATA, O_RDONLY, S_IRUSR)) < 0) {
@@ -193,16 +190,9 @@ void readEncodedBuffer() {
 
   char *rawBuffer =
       mmap(NULL, ORGDATA_LEN, PROT_READ, MAP_PRIVATE, encdataFD, 0);
-  originalBuffer = malloc(sizeof(encoded_bit_t) * ORGDATA_LEN);
+  originalBuffer = malloc(sizeof(char) * ORGDATA_LEN);
   for (int idx = 0; idx < ORGDATA_LEN; idx++) {
-    switch (rawBuffer[idx]) {
-    case '0':
-      originalBuffer[idx] = ENCODED_BIT_ZERO;
-      break;
-    case '1':
-      originalBuffer[idx] = ENCODED_BIT_ONE;
-      break;
-    }
+    originalBuffer[idx] = rawBuffer[idx];
   }
 }
 
@@ -213,7 +203,7 @@ typedef struct {
   int lineCursors[NP_LINES_LENGTH];
   int lineLengths[NP_LINES_LENGTH];
   int outputCursor;
-  encoded_bit_t *outputBuffer;
+  char *outputBuffer;
 } reader_state_t;
 
 reader_state_t createReader() {
@@ -227,8 +217,15 @@ reader_state_t createReader() {
     reportError("fstat");
   }
 
+  
+  int outputFD;
+  if ((outputFD = open(DECDATA, O_CREAT | O_RDWR, S_IRUSR)) < 0) {
+    reportError(DECDATA);
+  }
+
   reader_state_t state = {.outputCursor = 0};
-  state.outputBuffer = malloc(sizeof(encoded_bit_t) * ORGDATA_LEN);
+  state.outputBuffer = mmap(NULL, ORGDATA_LEN, PROT_WRITE, MAP_SHARED, outputFD, 0);
+  
   char *buffer = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, sourceFD, 0);
   int cursor = 0;
   for (int line = 0; line < NP_LINES_LENGTH; line++) {
@@ -243,6 +240,10 @@ reader_state_t createReader() {
   assert(cursor == sb.st_size);
   close(sourceFD);
   return state;
+}
+
+void finalizeReader(reader_state_t *state) {
+  msync(state->outputBuffer, ORGDATA_LEN, 0);
 }
 
 void dumpState(reader_state_t *state) {
@@ -273,10 +274,10 @@ void dumpState(reader_state_t *state) {
       char ch;
       if (cursor % 2 == 0) {
         ch =
-            (state->outputBuffer[cursor] == ENCODED_BIT_ZERO) ? BASE_T : BASE_C;
+            (state->outputBuffer[cursor] == '0') ? BASE_T : BASE_C;
       } else {
         ch =
-            (state->outputBuffer[cursor] == ENCODED_BIT_ZERO) ? BASE_A : BASE_G;
+            (state->outputBuffer[cursor] == '0') ? BASE_A : BASE_G;
       }
       printf("%c", ch);
     }
@@ -298,9 +299,9 @@ void dumpState(reader_state_t *state) {
          cursor++) {
       char ch;
       if (cursor % 2 == 0) {
-        ch = (originalBuffer[cursor] == ENCODED_BIT_ZERO) ? BASE_T : BASE_C;
+        ch = (originalBuffer[cursor] == '0') ? BASE_T : BASE_C;
       } else {
-        ch = (originalBuffer[cursor] == ENCODED_BIT_ZERO) ? BASE_A : BASE_G;
+        ch = (originalBuffer[cursor] == '0') ? BASE_A : BASE_G;
       }
       if (cursor == baseCursor) {
         printf("[%c]", ch);
@@ -312,7 +313,7 @@ void dumpState(reader_state_t *state) {
   }
 }
 
-void writeOutput(reader_state_t *state, encoded_bit_t value) {
+void writeOutput(reader_state_t *state, char value) {
 #ifdef LOG_DEBUG
   if (value != originalBuffer[state->outputCursor]) {
     dumpState(state);
@@ -336,7 +337,7 @@ void advanceLineCursors(reader_state_t *state) {
   }
 }
 
-encoded_bit_t estimateHeadBit(reader_state_t *state, char *heads) {
+char estimateHeadBit(reader_state_t *state, char *heads) {
   int zeros = 0, ones = 0;
   for (int line = 0; line < NP_LINES_LENGTH; line++) {
     switch (heads[line]) {
@@ -361,7 +362,7 @@ encoded_bit_t estimateHeadBit(reader_state_t *state, char *heads) {
 #ifdef LOG_DEBUG
   assert(zeros != 0 || ones != 0);
 #endif
-  return zeros < ones ? ENCODED_BIT_ONE : ENCODED_BIT_ZERO;
+  return zeros < ones ? '1' : '0';
 }
 
 // いまのカーソルの状態からPEEK_LENGTHだけ多数決で推定する
@@ -390,7 +391,7 @@ void estimatePeekingHeads(reader_state_t *state, bool *isValidLine,
   }
 }
 
-void estimateHeadOffsets(reader_state_t *state, encoded_bit_t bit, char *heads,
+void estimateHeadOffsets(reader_state_t *state, char bit, char *heads,
                          int *offsetsByLine) {
   bool isValidLine[NP_LINES_LENGTH];
   for (int line = 0; line < NP_LINES_LENGTH; line++) {
@@ -464,7 +465,7 @@ void adjustErrors(reader_state_t *state) {
       continue;
     }
 
-    encoded_bit_t headBit = estimateHeadBit(state, heads);
+    char headBit = estimateHeadBit(state, heads);
 
     int offsetsByLine[NP_LINES_LENGTH] = {};
     estimateHeadOffsets(state, headBit, heads, offsetsByLine);
@@ -477,29 +478,12 @@ void adjustErrors(reader_state_t *state) {
 
 void dec(void) {
 
-  FILE *outputFile;
-  if ((outputFile = fopen(DECDATA, "w")) == NULL) {
-    fprintf(stderr, "cannot open %s\n", DECDATA);
-    exit(1);
-  }
-
   ADS_DEBUG(readEncodedBuffer());
   reader_state_t state = createReader();
   adjustErrors(&state);
+  writeOutput(&state, '\n');
+  finalizeReader(&state);
 
-  for (int idx = 0; idx < ORGDATA_LEN; idx++) {
-    switch (state.outputBuffer[idx]) {
-    case ENCODED_BIT_ZERO:
-      fputc('0', outputFile);
-      break;
-    case ENCODED_BIT_ONE:
-      fputc('1', outputFile);
-      break;
-    }
-  }
-  fputc('\n', outputFile);
-
-  fclose(outputFile);
   return;
 }
 
