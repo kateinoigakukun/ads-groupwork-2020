@@ -10,6 +10,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#pragma GCC optimize("Ofast")
+
 #define NP_LINES_LENGTH 5
 #define NP_DIFF_THRESHOLD 3
 #define PEEK_LENGTH 15
@@ -120,7 +122,7 @@ void dumpCostTable(int **costTable, char *base, int baseLength, char *target,
   printf("\n");
 }
 
-int costTable[PEEK_LENGTH][PEEK_LENGTH];
+int costTable[PEEK_LENGTH + 1][PEEK_LENGTH + 1];
 int peekingEditDistance(char *base, char *target) {
   int length = PEEK_LENGTH;
   costTable[0][0] = 0;
