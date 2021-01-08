@@ -10,7 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define NP_LINES_LENGTH 4
+#define NP_LINES_LENGTH 5
 #define NP_DIFF_THRESHOLD 3
 #define PEEK_LENGTH 15
 
