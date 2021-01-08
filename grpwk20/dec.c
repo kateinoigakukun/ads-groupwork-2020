@@ -47,11 +47,15 @@ void reportError(char *context) {
   exit(EXIT_FAILURE);
 }
 
-static inline int min(int a, int b) {
-  return a < b ? a : b;
-}
 static inline int min3(int a, int b, int c) {
-  return min(a, min(b, c));
+  int items[3] = {a, b, c};
+  int minItem = a;
+  for (int i = 1; i < 3; i++) {
+    if (minItem > items[i]) {
+      minItem = items[i];
+    }
+  }
+  return minItem;
 }
 
 int max2(int a, int b) { return a > b ? a : b; }
