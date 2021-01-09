@@ -86,8 +86,9 @@ int costTable[PEEK_LENGTH + 1][PEEK_LENGTH + 1];
 int opTable[PEEK_LENGTH + 1][PEEK_LENGTH + 1];
 
 // MARK: - Debug Support for edit distance
-void dumpCostTable(char *base, int baseLength, char *target,
-                   int targetLength) {
+void dumpCostTable(char *base, char *target) {
+  int baseLength = PEEK_LENGTH;
+  int targetLength = PEEK_LENGTH;
   printf("|   |");
   for (int y = 0; y < baseLength + 1; y++) {
     printf("  %2d  |", y);
@@ -140,8 +141,9 @@ typedef struct {
   int bsIndex;
 } edit_op_t;
 
-void dumpOpTable(char *bsBuffer,
-                 int bsLength, char *npBuffer, int npLength) {
+void dumpOpTable(char *base, char *target) {
+  int bsLength = PEEK_LENGTH;
+  int npLength = PEEK_LENGTH;
   printf("|   |");
   for (int y = 0; y < bsLength + 1; y++) {
     printf("  %2d  |", y);
@@ -151,7 +153,7 @@ void dumpOpTable(char *bsBuffer,
   printf("|   |   x  |");
 
   for (int y = 0; y < bsLength; y++) {
-    printf("   %c  |", bsBuffer[y]);
+    printf("   %c  |", base[y]);
   }
   printf("\n");
   printf("│───┼──────┼");
@@ -164,7 +166,7 @@ void dumpOpTable(char *bsBuffer,
     if (x == 0) {
       printf("| x |");
     } else {
-      printf("| %c |", npBuffer[x - 1]);
+      printf("| %c |", target[x - 1]);
     }
     for (int y = 0; y < bsLength + 1; y++) {
       char symbol[4] = {0};
@@ -250,7 +252,7 @@ int calculateEditOperations(char *base, char *target, edit_op_t *bestOps) {
           .payload1 = target[x - 1],
           .bsIndex = y - 1,
       };
-      ADS_DEBUG(assert(npBuffer[x - 1] == bsBuffer[y - 1]));
+      ADS_DEBUG(assert(target[x - 1] == base[y - 1]));
       opCount++;
       x--;
       y--;
@@ -279,7 +281,7 @@ int calculateEditOperations(char *base, char *target, edit_op_t *bestOps) {
 
 void dumpEditOps(edit_op_t *ops, int opLength) {
   for (int i = opLength - 1; i >= 0; i--) {
-    printf("edit[%2d][bs_index=%2d]: ", opLength - i - 1, ops[i].bsIndex);
+    printf("edit[%2d]: ", opLength - i - 1);
     switch (ops[i].kind) {
     case EDIT_OP_SUBST:
       printf("subst '%c' with '%c'\n", ops[i].payload1, ops[i].payload2);
@@ -577,11 +579,11 @@ int offsetFromEditOps(edit_op_t *ops, int opsLength) {
   return offset;
 }
 
-void estimateHeadOffsets(reader_state_t *state, char bit, char *heads,
-                         int *offsetsByLine) {
+void estimateHeadOffsets(reader_state_t *state, char outputBit,
+                         char *heads, int *offsetsByLine) {
   bool isValidLine[NP_LINES_LENGTH];
   for (int line = 0; line < NP_LINES_LENGTH; line++) {
-    bool isSameBit = bit == decodeBit(heads[line]);
+    bool isSameBit = outputBit == decodeBit(heads[line]);
     bool isUpperBit = heads[line] == BASE_T || heads[line] == BASE_C;
     bool isSameLoc = (state->outputCursor % 2 == 0) == isUpperBit;
     isValidLine[line] = isSameBit && isSameLoc;
